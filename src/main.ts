@@ -13,6 +13,17 @@ const panelEl = $('panel');
 const modalEl = $('modal');
 const battleEl = $('battle');
 const metaEl = $('meta-info');
+const mstatusEl = $('mstatus');
+const panelMask = $('panel-mask');
+
+// 手机上角色面板是底部抽屉
+function togglePanel(open?: boolean) {
+  const on = open ?? !panelEl.classList.contains('open');
+  panelEl.classList.toggle('open', on);
+  panelMask.classList.toggle('open', on);
+}
+mstatusEl.onclick = () => togglePanel();
+panelMask.onclick = () => togglePanel(false);
 
 const meta = loadMeta();
 let auto = false;
@@ -24,6 +35,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ---------------- 弹窗 ----------------
 function openModal(html: string, cls = ''): HTMLElement {
+  togglePanel(false);
   modalEl.innerHTML = `<div class="modal ${cls}"><div class="modal-box">${html}</div></div>`;
   modalEl.classList.add('show');
   return modalEl.querySelector('.modal-box') as HTMLElement;
@@ -284,7 +296,15 @@ function refresh() {
   const lamps = (['silu', 'fox', 'chiyi', 'danzun', 'bottle'] as CompanionId[]).map((c) => `<span class="lamp" style="--l:${lampOf(meta, L, c) / 9}">${COMPANION_NAMES[c]}<i>${lampOf(meta, L, c)}</i></span>`).join('');
   const sch = L.schoolCur ? SCHOOL_NAMES[L.schoolCur] : '未定';
   const topSch = (Object.keys(L.school) as School[]).sort((a, b) => L.school[b] - L.school[a]).slice(0, 2).map((s) => `${SCHOOL_NAMES[s]} ${L.school[s]}`).join('、');
+  const hpLow = L.hp < L.maxHp * 0.3;
+  mstatusEl.innerHTML = `
+    <span class="ms-seal">${realm}</span>
+    <span class="ms-age"><b>${cnAge(L.age)}岁</b><small>寿 ${span}</small></span>
+    <span class="ms-bars">${bar(L.hp, L.maxHp, 'hp' + (hpLow ? ' low' : ''), `气血 ${Math.ceil(L.hp)}/${L.maxHp}${L.injuries ? ` · 伤${L.injuries}` : ''}`)}${L.inDao ? bar(L.xp, need, 'xp', `修为 ${Math.floor(L.xp)}/${need}`) : `<div class="ms-meta">${esc(metaEl.textContent ?? '')}</div>`}</span>
+    <span class="ms-more">详情</span>`;
   panelEl.innerHTML = `
+    <div class="sheet-head m-only"><b>角色</b><button class="btn sm" data-close>收起</button></div>
+    <div class="m-only muted sheet-meta">${esc(metaEl.textContent ?? '')}</div>
     <div class="seal">${realm}</div>
     <div class="p-row"><b>${cnAge(L.age)}岁</b><span>寿元 ${span}</span></div>
     ${L.inDao ? bar(L.xp, need, 'xp', `修为 ${Math.floor(L.xp)}/${need}`) : ''}
@@ -305,6 +325,8 @@ function refresh() {
     ${wish ? `<h4>心愿</h4><div class="wish ${L.wish!.done ? 'done' : ''}">「${wish.name}」${wish.cond}<br>${bar(L.wish!.progress, 1, 'wishbar', L.wish!.done ? '圆满' : Math.round(L.wish!.progress * 100) + '%')}</div>` : ''}
     ${L.traces.length ? `<h4>本世痕迹</h4><div class="chips">${L.traces.map((t) => `<span class="chip trace" title="${MUTATORS.find((m) => m.trace === t.tag)?.name ?? ''}">${MUTATORS.find((m) => m.trace === t.tag)?.name ?? t.tag}</span>`).join('')}</div>` : ''}
     <h4>命灯</h4><div class="lamps">${lamps}</div>`;
+  const close = panelEl.querySelector<HTMLButtonElement>('[data-close]');
+  if (close) close.onclick = () => togglePanel(false);
 }
 
 async function pace() {
@@ -375,6 +397,8 @@ function showSettings() {
 document.querySelectorAll<HTMLButtonElement>('[data-open]').forEach((b) => {
   b.onclick = () => {
     if (modalEl.classList.contains('show') || battleEl.classList.contains('show')) return;
+    if (b.dataset.open === 'panel') return togglePanel();
+    togglePanel(false);
     ({ book: showBook, lamps: showLamps, past: showPast, settings: showSettings })[b.dataset.open as 'book']();
   };
 });

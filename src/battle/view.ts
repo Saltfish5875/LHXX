@@ -222,7 +222,10 @@ export function runBattle(spec: BattleSpec, root: HTMLElement): Promise<BattleRe
         keys.add(k);
         if (sim.levelUp && ['1', '2', '3', '4'].includes(k)) pickLevel(Number(k) - 1);
         if (k === 'q') toggleHold();
-        if (k === 'p' || k === 'escape') paused = !paused;
+        if (k === 'p' || k === 'escape') {
+          paused = !paused;
+          pauseBtn.textContent = paused ? '继续' : '暂停';
+        }
       } else keys.delete(k);
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
     };
@@ -237,21 +240,39 @@ export function runBattle(spec: BattleSpec, root: HTMLElement): Promise<BattleRe
       }
     };
     const onUp = () => (joy = null);
+    const touch = window.matchMedia('(pointer: coarse)').matches;
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKey);
     window.addEventListener('resize', resize);
     root.addEventListener('pointerdown', onDown);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
 
     const hold = document.createElement('button');
     hold.className = 'btn hold-btn';
-    hold.textContent = '收剑 (Q)';
+    const keyHint = (k: string) => (touch ? '' : ` (${k})`);
+    hold.textContent = '收剑' + keyHint('Q');
     hold.onclick = () => toggleHold();
     root.appendChild(hold);
+    const pauseBtn = document.createElement('button');
+    pauseBtn.className = 'btn pause-btn';
+    pauseBtn.textContent = '暂停';
+    pauseBtn.onclick = () => {
+      paused = !paused;
+      pauseBtn.textContent = paused ? '继续' : '暂停';
+    };
+    root.appendChild(pauseBtn);
+    if (touch) {
+      const tip = document.createElement('div');
+      tip.className = 'touch-tip';
+      tip.textContent = '按住屏幕任意处拖动即可移动';
+      root.appendChild(tip);
+      setTimeout(() => tip.remove(), 3500);
+    }
     function toggleHold() {
       sim.holdFire = !sim.holdFire;
-      hold.textContent = sim.holdFire ? '出剑 (Q)' : '收剑 (Q)';
+      hold.textContent = (sim.holdFire ? '出剑' : '收剑') + keyHint('Q');
       hold.classList.toggle('active', sim.holdFire);
     }
 
@@ -322,6 +343,7 @@ export function runBattle(spec: BattleSpec, root: HTMLElement): Promise<BattleRe
       root.removeEventListener('pointerdown', onDown);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
       root.classList.remove('show');
       root.innerHTML = '';
     }
@@ -343,7 +365,7 @@ function drawHud(hud: HTMLElement, sim: BattleSim, paused: boolean) {
       <div class="skills">${sk}</div>
     </div>
     ${sim.messageT > 0 ? `<div class="hud-msg">${sim.message}</div>` : ''}
-    ${paused ? '<div class="hud-msg">暂停（P 继续）</div>' : ''}
+    ${paused ? '<div class="hud-msg">暂停中</div>' : ''}
     ${sim.done ? `<div class="hud-msg big">${sim.result?.win || sim.result?.survivedKnock ? (sim.result?.survivedKnock ? '叩门' : '劫过') : '败'}</div>` : ''}`;
   if (hud.dataset.last !== html) {
     hud.innerHTML = html;

@@ -1,0 +1,11 @@
+{
+  "name": "轮回修仙幸存者",
+  "short_name": "轮回修仙",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eef3f5",
+  "theme_color": "#eef3f5",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
