@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>轮回修仙幸存者 · R12 网页原型</title>
+    <meta name="description" content="《轮回修仙幸存者》R12 网页原型：每年一个决定、带着这一世去打劫难、死后回到轮回井。" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">轮回修仙幸存者<small>R12 原型</small></div>
+        <div class="meta-info" id="meta-info"></div>
+        <nav class="top-actions">
+          <button class="btn ghost" data-open="book">天书</button>
+          <button class="btn ghost" data-open="lamps">命灯</button>
+          <button class="btn ghost" data-open="past">前世书</button>
+          <button class="btn ghost" data-open="settings">设置</button>
+        </nav>
+      </header>
+      <main class="layout">
+        <section class="scroll-wrap">
+          <div class="scroll" id="scroll"></div>
+          <div class="deal" id="deal"></div>
+        </section>
+        <aside class="panel" id="panel"></aside>
+      </main>
+    </div>
+    <div class="modal-root" id="modal"></div>
+    <div class="battle-root" id="battle"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
