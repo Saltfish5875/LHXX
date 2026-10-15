@@ -1,6 +1,7 @@
 // 轮回数据（跨世）与存档：lhxx.meta.v3 / lhxx.life.v3
 import type { LifeState, MetaState } from './types';
 import type { CompanionId } from '../data/content';
+import { faceKinds } from '../data/faces';
 
 const META_KEY = 'lhxx.web.meta.v3';
 const LIFE_KEY = 'lhxx.web.life.v3';
@@ -30,6 +31,10 @@ export function newMeta(): MetaState {
     siluIdx: 0,
     achievements: [],
     deaths: 0,
+    acquaintances: [],
+    faces: [],
+    lastEra: null,
+    nextBonus: {},
     settings: { tendency: 'safe', speed: 1 },
   };
 }
@@ -117,6 +122,7 @@ export const WHEEL: WheelItem[] = [
   { id: 'longevity', name: '长生道果', desc: '寿元 +5%', base: 50, max: 5 },
   { id: 'affinity', name: '仙缘深厚', desc: '仙缘概率提升、无灵根更少', base: 60, max: 3 },
   { id: 'fate', name: '天机一线', desc: '每年改命 +1', base: 120, max: 2, gate: (M) => M.saga.pages.includes(6), gateText: '需天书第 6 页' },
+  { id: 'choose', name: '择世', desc: '开局从两个引子里选一个（年代仍随机）', base: 180, max: 1, gate: (M) => faceKinds(M) >= 6, gateText: '千面录集齐 6 种引子' },
 ];
 export const wheelPrice = (it: WheelItem, lvl: number) => Math.round(it.base * (1 + 0.65 * lvl));
 

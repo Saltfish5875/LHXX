@@ -4,7 +4,8 @@ import { loadLife, loadMeta, resetAll, saveMeta, lampOf } from './game/meta';
 import { runBattle } from './battle/view';
 import { ATTR_NAMES, AttrKey, CN_NUM, REALMS, ROOTS, SCHOOL_NAMES, School, TALENT_BY_ID, Talent, cnAge } from './data/core';
 import { COMPANION_NAMES, CompanionId, LEGENDS, MUTATORS, PAGES, VOLUME_NAMES, WISHES } from './data/content';
-import type { LogEntry, Tendency } from './game/types';
+import type { LifeState, LogEntry, Tendency } from './game/types';
+import { ERA_BY_ID, HOOKS, RELATION_NAMES, faceKinds } from './data/faces';
 
 const $ = (id: string) => document.getElementById(id)!;
 const scrollEl = $('scroll');
@@ -157,7 +158,7 @@ function allocate(points: number, base: Record<AttrKey, number>, origins: string
 const ATTR_DESC: Record<AttrKey, string> = { gen: '寿元、气血、凡间存活', wu: '修炼速度、悟道', luck: '灵根、仙缘、改命、暴击', fam: '出身、初始灵石' };
 
 // ---------------- 去向卡 ----------------
-const TAG_CLASS: Record<string, string> = { 劫: 'tag-jie', 缘: 'tag-yuan', 凶: 'tag-xiong', 平: 'tag-ping' };
+const TAG_CLASS: Record<string, string> = { 劫: 'tag-jie', 缘: 'tag-yuan', 凶: 'tag-xiong', 平: 'tag-ping', 引: 'tag-yin', 故: 'tag-gu' };
 const AUTO_SCORE: Record<Tendency, Record<string, number>> = {
   safe: { 平: 2, 缘: 1, 劫: -3, 凶: -5 },
   chance: { 平: 1, 缘: 3, 劫: -1, 凶: -3 },
@@ -222,10 +223,11 @@ function deal(v: DealView): Promise<DealAction> {
     function scheduleAuto() {
       const L = game.L;
       const lowHp = L.hp < L.maxHp * 0.3 && v.cards.some((c) => c.tag === '劫');
-      if (v.gathered || lowHp) {
+      const story = v.cards.find((c) => c.tag === '引' || c.tag === '故');
+      if (v.gathered || lowHp || story) {
         auto = false;
         render();
-        flash(v.gathered ? '劫气积聚，自动暂停' : '气血低于三成，自动暂停');
+        flash(v.gathered ? '劫气积聚，自动暂停' : story ? `「${story.tag}」卡出现，自动暂停` : '气血低于三成，自动暂停');
         return;
       }
       timer = setTimeout(() => {
@@ -284,9 +286,21 @@ function bar(cur: number, max: number, cls: string, label: string) {
   return `<div class="bar ${cls}"><div style="width:${p}%"></div><em>${label}</em></div>`;
 }
 
+function faceBlock(L: LifeState) {
+  const era = L.era ? ERA_BY_ID[L.era] : null;
+  let hook = '';
+  if (L.hook) {
+    const h = HOOKS.find((x) => x.id === L.hook!.id)!;
+    const st = L.hook.outcome === 'done' ? '已了结' : L.hook.outcome === 'open' ? '未了' : `${['起', '转', '结'][L.hook.beat]}拍 · ${L.age >= L.hook.due ? '到期' : cnAge(L.hook.due) + '岁前后'}`;
+    hook = `<div class="hookline"><b>引</b>「${h.name}」<span>${st}</span></div>`;
+  }
+  const met = L.acqMet?.length ? `<div class="hookline"><b class="gu">故</b>本世再遇 ${L.acqMet.length} 位故人</div>` : '';
+  return era ? `<div class="era"><b>${era.name}</b><span>${era.note}</span></div>${hook}${met}` : '';
+}
+
 function refresh() {
   const L = game?.L;
-  metaEl.innerHTML = `第 ${meta.lives} 世 · ${VOLUME_NAMES[meta.saga.volume]} · 天书 ${meta.saga.pages.length + (L ? L.pagesGot.filter((p) => !meta.saga.pages.includes(p)).length : 0)}/27 · 宿慧 ${meta.insight}`;
+  metaEl.innerHTML = `第 ${meta.lives} 世${L?.era ? " · " + ERA_BY_ID[L.era].name : ""} · ${VOLUME_NAMES[meta.saga.volume]} · 天书 ${meta.saga.pages.length + (L ? L.pagesGot.filter((p) => !meta.saga.pages.includes(p)).length : 0)}/27 · 宿慧 ${meta.insight}`;
   if (!L) return;
   const realm = L.inDao ? REALMS[L.realm].name : '凡人';
   const span = game.lifespan();
@@ -305,6 +319,7 @@ function refresh() {
   panelEl.innerHTML = `
     <div class="sheet-head m-only"><b>角色</b><button class="btn sm" data-close>收起</button></div>
     <div class="m-only muted sheet-meta">${esc(metaEl.textContent ?? '')}</div>
+    <div class="m-only">${faceBlock(L)}</div>
     <div class="seal">${realm}</div>
     <div class="p-row"><b>${cnAge(L.age)}岁</b><span>寿元 ${span}</span></div>
     ${L.inDao ? bar(L.xp, need, 'xp', `修为 ${Math.floor(L.xp)}/${need}`) : ''}
@@ -320,6 +335,7 @@ function refresh() {
       <span>流派</span><b>${sch}</b>
       <span>道途</span><b class="small">${topSch}</b>
     </div>
+    <div class="d-only">${faceBlock(L)}</div>
     <h4>天赋</h4><div class="chips">${L.talents.map((t) => `<span class="chip g-${TALENT_BY_ID[t].grade}" title="${TALENT_BY_ID[t].desc}">${TALENT_BY_ID[t].name}</span>`).join('')}</div>
     ${L.skills.length ? `<h4>法宝</h4><div class="chips">${L.skills.map((s) => `<span class="chip">${skillName(s.id)} ${CN_NUM[s.lvl]}阶</span>`).join('')}</div>` : ''}
     ${wish ? `<h4>心愿</h4><div class="wish ${L.wish!.done ? 'done' : ''}">「${wish.name}」${wish.cond}<br>${bar(L.wish!.progress, 1, 'wishbar', L.wish!.done ? '圆满' : Math.round(L.wish!.progress * 100) + '%')}</div>` : ''}
@@ -373,7 +389,20 @@ function showPast() {
   const list = meta.epitaphs.length
     ? meta.epitaphs.map((e) => `<div class="epi"><b>第 ${e.life} 世 · ${esc(e.title)}</b> <em>${e.grade}</em><p>${e.lines.map(esc).join('<br>')}<br>${esc(e.death)}</p></div>`).join('')
     : '<p class="muted">还没有前世。</p>';
-  const box = openModal(`<h2>前世书</h2><div class="epis">${list}</div><div class="row"><button class="btn primary">关闭</button></div>`, 'wide');
+  const faces = meta.faces ?? [];
+  const kinds = faceKinds(meta);
+  const faceGrid = HOOKS.map((h) => {
+    const eras = faces.filter((f) => f.hook === h.id).map((f) => ERA_BY_ID[f.era]?.name ?? f.era);
+    return `<div class="face ${eras.length ? 'got' : ''}"><b>${h.id} ${h.name}</b><span>${eras.length ? eras.join('、') : h.condText}</span></div>`;
+  }).join('');
+  const acqs = (meta.acquaintances ?? []).filter((a) => !a.resolved);
+  const acqList = acqs.length
+    ? `<ul>${acqs.map((a) => `<li><b>${esc(a.name)}</b>（${RELATION_NAMES[a.relation]}）· 第 ${a.life} 世 · ${ERA_BY_ID[a.era]?.name ?? a.era} · 已 ${meta.lives - a.lastSeen} 世未见</li>`).join('')}</ul>`
+    : '<p class="muted">还没有欠着谁，也没有谁欠着你。</p>';
+  const box = openModal(`<h2>前世书</h2>
+    <h3>千面录 · ${kinds}/16 种引子</h3><p class="muted">集齐 3 种出现「说书人」，6 种开启轮回盘「择世」，12 种得称号「一人千面」。</p><div class="faces">${faceGrid}</div>
+    <h3>故人 · ${acqs.length}/8</h3>${acqList}
+    <h3>墓志铭</h3><div class="epis">${list}</div><div class="row"><button class="btn primary">关闭</button></div>`, 'wide');
   (box.querySelector('.btn.primary') as HTMLButtonElement).onclick = closeModal;
 }
 

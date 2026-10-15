@@ -3,8 +3,14 @@ import { ATTR_NAMES, AttrKey, CN_NUM, REALMS, REALM_SCORE, ROOTS, SCHOOL_NAMES, 
 import { COMPANION_NAMES, COMPANION_QUOTE, CompanionId, ENDINGS, HIDDEN, LEGENDS, MUTATORS, Mutator, OPENING, PAGES, REGRETS, SILU_DAILY, SILU_TRIGGER, VOLUME_NAMES, WISHES, WishDef } from '../data/content';
 import { BATTLE_TITLES, CHOICES, ENCOUNTERS, FLAVORS, LOCATIONS, LOC_BY_ID, LifeEvent, LocationDef, NOTHING_CULT, NOTHING_MORTAL } from '../data/events';
 import { BOND_EVENTS, BondEvent } from '../data/companions';
+import { ACQ_GONE, ACQ_NICK, ACQ_SHAPE_NAMES, ACQ_TEXT, AcqShape, ERAS, ERA_BY_ID, FACES_SILU, HOOKS, HOOK_BY_ID, HookDef, IDENTITY_CHOICES, RELATION_NAMES, eraIndex, faceKinds } from '../data/faces';
 import type { BattleSpec, BattleResult, PartnerSpec, Boss } from '../battle/spec';
-import type { BattleKind, Card, CardTag, Effect, LifeState, LogEntry, MetaState, Option, Skill, SkillId, Tendency } from './types';
+import type { Acquaintance, BattleKind, Card, CardTag, Effect, LifeState, LogEntry, MetaState, Option, Skill, SkillId, Tendency } from './types';
+
+const BEAT_NAMES = ['起', '转', '结'];
+// 普通事件池里的身世抉择（只经「引」卡出现的除外）
+const POOL_IDENTITY = IDENTITY_CHOICES.filter((e) => !e.hookOnly && e.options && e.options.length);
+const ALL_CHOICES: LifeEvent[] = [...CHOICES, ...POOL_IDENTITY];
 import { chance, pick, rand, randInt, shuffle, weighted } from './rng';
 import { UNLOCKS, WHEEL, hasPage, lampOf, saveLife, saveMeta, wheelPrice } from './meta';
 
@@ -61,6 +67,8 @@ export class Game {
   private sign: { calamity: string[]; chance: string[]; omen: string[]; gathered: boolean } = { calamity: [], chance: [], omen: [], gathered: false };
   private rerolls = 0;
   pendingWish: string | null = null;
+  private hookOffered = false;
+  private acqCard: Card | null = null;
 
   constructor(meta: MetaState, io: IO) {
     this.M = meta;
@@ -189,6 +197,13 @@ export class Game {
       caveVisits: 0,
       mortalVisitsAfterSpirit: 0,
       marketCd: 0,
+      era: 'E1',
+      hook: null,
+      acqMet: [],
+      acqNew: [],
+      acqResolved: [],
+      acqCards: 0,
+      insightExtra: 0,
     };
     this.L = L;
     if (M.lives === 1 && !this.sim) {
@@ -213,7 +228,9 @@ export class Game {
     const origins = ['inkOrphan', 'dragon', 'painter'].filter((o) => M.unlocks.includes(o));
     const { attrs, origin } = await this.io.allocate(20 + (M.wheel.attr ?? 0), base, origins);
     L.attrs = attrs;
-    L.origin = origin ?? originOf(attrs.fam, this.tflag('orphan'));
+    const nb = M.nextBonus ?? {};
+    if (nb.fam) L.attrs.fam = Math.min(12, L.attrs.fam + nb.fam);
+    L.origin = origin ?? originOf(L.attrs.fam, this.tflag('orphan'));
     L.stones = 10 + attrs.fam * 8 + (this.tflag('stones60') ? 60 : 0);
     if (L.origin === '墨门遗孤') L.school.demon += 20;
     if (L.origin === '龙族血脉') L.attrs.gen += 3;
@@ -249,8 +266,23 @@ export class Game {
       await this.io.choose({ title: `传奇开局 · ${l.name}`, text: `${l.text}\n\n${l.effect}`, options: [{ label: '开卷' }], style: 'legend', important: true });
     }
 
+    // 一人千面：年代与引子
+    if (nb.fortune) L.flags.fortuneLife = 1;
+    if (nb.reroll) L.flags.rerollPlus = nb.reroll;
+    if (nb.rerollOnce) this.fairBonus += nb.rerollOnce;
+    const chooseHook = !!nb.chooseHook || (M.wheel.choose ?? 0) > 0;
+    M.nextBonus = {};
+    const eras = ERAS.filter((e) => e.unlock(M) && e.id !== M.lastEra);
+    L.era = pick(eras.length ? eras : ERAS.filter((e) => e.unlock(M))).id;
+    await this.pickHook(chooseHook);
+
     const talentNames = L.talents.map((t) => TALENT_BY_ID[t].name).join('、');
+    this.log(`画卷 · ${ERA_BY_ID[L.era].name}：${ERA_BY_ID[L.era].open}`, 'fate');
     this.log(`你出生在${L.origin}。天赋：${talentNames}。`, 'milestone');
+    if (L.hook) {
+      const h = HOOK_BY_ID[L.hook.id];
+      this.log(`本世引子：「${h.name}」${h.start.birth ? '——' + h.start.birth : ''}`, 'fate');
+    }
     if (L.wish) this.log(`本世心愿：「${this.wishDef(L.wish.id)?.name}」——${this.wishDef(L.wish.id)?.cond}`, 'wish');
     if (this.M.saga.endings.includes('T') && L.lifeNo > 0 && !L.flags.newLampShown) {
       this.log('你出生那夜，砚池边多了一盏新灯。提灯的人还很小，看不见东西，但她在笑。', 'fate');
@@ -308,6 +340,15 @@ export class Game {
   async runLife(resume = false) {
     if (!resume) await this.newLife();
     else {
+      // 旧存档缺少一人千面字段时补默认值
+      const L = this.L;
+      L.era ??= 'E1';
+      L.hook ??= null;
+      L.acqMet ??= [];
+      L.acqNew ??= [];
+      L.acqResolved ??= [];
+      L.acqCards ??= 0;
+      L.insightExtra ??= 0;
       this.io.clearLog();
       for (const e of this.L.log) if (e.text) this.io.log(e);
       this.io.refresh();
@@ -360,6 +401,8 @@ export class Game {
       if (!L.inDao && L.age >= 120) return this.endHidden('H1');
       return this.die(L.inDao ? '大限坐化' : L.age >= 60 ? '寿终正寝' : '积劳成疾');
     }
+    L.flags.spanLeft = this.lifespan() - L.age;
+    if (L.flags.fateKnown && L.flags.spanLeft === 1) L.nextLoc = 'cross';
 
     await this.milestones();
     if (this.dead()) return;
@@ -558,6 +601,7 @@ export class Game {
     if (L.realm === 5) return; // 化神的劫在 fight 里处理（叩门 / 劫主）
     L.realm += 1;
     L.xp = 0;
+    if (L.hook && !L.hook.outcome && L.hook.beat === 1) L.hook.due = Math.min(L.hook.due, L.age);
     L.maxHp = this.calcMaxHp();
     L.hp = L.maxHp;
     const name = REALMS[L.realm].name;
@@ -616,7 +660,7 @@ export class Game {
     if (L.inDao) {
       if (gathered) s.calamity = danger.map((d) => d.id);
       else {
-        const n = chance(0.25) ? 2 : 1;
+        const n = chance(0.25 + (ERA_BY_ID[L.era ?? 'E1']?.calamityBoost ?? 0)) ? 2 : 1;
         for (const d of shuffle(danger).slice(0, n)) s.calamity.push(d.id);
       }
     } else {
@@ -681,7 +725,7 @@ export class Game {
     const related = this.relatedLocs();
     const rest = locs.filter((l) => !used.has(l.id));
     while (chosen.length < n && rest.length) {
-      const l = weighted(rest, (x) => x.weight * (related.includes(x.id) ? 2 : 1))!;
+      const l = weighted(rest, (x) => x.weight * (related.includes(x.id) ? 2 : 1) * this.locMult(x.id))!;
       rest.splice(rest.indexOf(l), 1);
       add(l.id);
     }
@@ -691,7 +735,57 @@ export class Game {
       if (safe) chosen[chosen.length - 1] = { loc: safe.id, tag: '平' };
     }
     if (this.sign.gathered) for (const c of chosen) if (LOC_BY_ID[c.loc].danger) c.tag = '劫';
-    return shuffle(chosen);
+    const out = shuffle(chosen);
+    this.injectFaceCard(out, first);
+    return out;
+  }
+
+  // 年代与本世加成对地点权重的倍率
+  locMult(loc: string) {
+    const L = this.L;
+    let m = ERA_BY_ID[L.era ?? 'E1']?.weight[loc] ?? 1;
+    if (loc === 'fortune' && (L.flags.fortuneLife || L.flags.fortuneYear === L.age)) m *= 1.5;
+    return m;
+  }
+
+  // 「引」「故」卡：替换一张非劫的去向卡，同回合最多一张
+  injectFaceCard(cards: Card[], first: boolean) {
+    const L = this.L;
+    const slot = () => {
+      let i = cards.findIndex((c) => c.tag === '平');
+      if (i < 0) i = cards.findIndex((c) => c.tag !== '劫');
+      return i < 0 ? cards.length - 1 : i;
+    };
+    const h = L.hook;
+    if (h && !h.outcome && h.beat < 3 && L.age >= h.due) {
+      const beat = HOOK_BY_ID[h.id].beats[h.beat];
+      cards[slot()] = { loc: beat.loc, tag: '引' };
+      this.hookOffered = true;
+      return;
+    }
+    if (!first) {
+      if (this.acqCard) cards[slot()] = this.acqCard;
+      return;
+    }
+    this.acqCard = null;
+    if ((L.acqCards ?? 0) >= 2 || !chance(0.04)) return;
+    const a = this.reunionCandidate();
+    if (!a) return;
+    const loc = L.inDao ? pick(['bazaar', 'cave', 'roam', 'cross'].filter((x) => this.availableLocs().some((l) => l.id === x))) ?? 'cave' : pick(['neighbor', 'market', 'home']);
+    this.acqCard = { loc, tag: '故', acq: a.id };
+    cards[slot()] = this.acqCard;
+  }
+
+  reunionCandidate(): Acquaintance | null {
+    const L = this.L;
+    const list = (this.M.acquaintances ?? []).filter((a) => !a.resolved && !L.acqMet!.includes(a.id) && a.life < L.lifeNo);
+    return list.length ? pick(list) : null;
+  }
+
+  acqShape(a: Acquaintance): AcqShape {
+    const now = eraIndex(this.L.era);
+    const then = eraIndex(a.era);
+    return now === then ? 'same' : now > then ? 'later' : 'earlier';
   }
 
   relatedLocs(): string[] {
@@ -713,6 +807,7 @@ export class Game {
       Math.floor(L.attrs.luck / 4) +
       L.talents.filter((t) => TALENT_BY_ID[t].flags?.includes('extraReroll')).length +
       (this.M.wheel.fate ?? 0) +
+      (L.flags.rerollPlus ?? 0) +
       this.fairBonus
     );
   }
@@ -731,7 +826,7 @@ export class Game {
         rerolls: this.rerolls,
         canRewind: this.hasPage(17) && !L.rewindUsed && !!this.prevSnapshot && !this.battleSinceSnap,
         gathered: this.sign.gathered,
-        cards: cards.map((c) => ({ ...c, name: LOC_BY_ID[c.loc].name, icon: LOC_BY_ID[c.loc].icon, hint: LOC_BY_ID[c.loc].hint, peekText: c.peeked ? this.peekLabel(c) : undefined })),
+        cards: cards.map((c) => ({ ...c, ...this.cardFace(c), peekText: c.peeked ? this.peekLabel(c) : undefined })),
       };
       const act = await this.io.deal(view);
       if (act.action === 'reroll' && this.rerolls > 0) {
@@ -752,13 +847,38 @@ export class Game {
         return;
       }
       if (act.action === 'go') {
-        await this.goTo(cards[act.idx]);
+        const c = cards[act.idx];
+        const h = L.hook;
+        if (this.hookOffered && h && !h.outcome && c.tag !== '引') {
+          h.deferred += 1;
+          if (h.deferred > 5) await this.hookEnd('open', '顺延太久');
+        }
+        this.hookOffered = false;
+        this.acqCard = null;
+        await this.goTo(c);
         return;
       }
     }
   }
 
+  cardFace(c: Card): { name: string; icon: string; hint: string } {
+    const L = this.L;
+    if (c.tag === '引' && L.hook) {
+      const h = HOOK_BY_ID[L.hook.id];
+      const b = h.beats[L.hook.beat];
+      return { name: h.name, icon: '引', hint: `${BEAT_NAMES[L.hook.beat]}·${b.title}${L.hook.deferred ? `（已顺延 ${L.hook.deferred} 年）` : ''}` };
+    }
+    if (c.tag === '故' && c.acq) {
+      const a = (this.M.acquaintances ?? []).find((x) => x.id === c.acq);
+      if (a) return { name: a.name, icon: '故', hint: `${RELATION_NAMES[a.relation]} · ${ACQ_SHAPE_NAMES[this.acqShape(a)]}` };
+    }
+    const d = LOC_BY_ID[c.loc];
+    const rn = ERA_BY_ID[L.era ?? 'E1']?.rename?.[c.loc];
+    return { name: rn?.name ?? d.name, icon: d.icon, hint: rn?.hint ?? d.hint };
+  }
+
   peekLabel(c: Card): string {
+    if (c.tag === '引' || c.tag === '故') return this.cardFace(c).hint;
     const id = c.peeked!;
     if (id === 'nothing') return '平淡无事';
     if (id.startsWith('battle:')) return '劫难：' + id.slice(7);
@@ -766,7 +886,7 @@ export class Game {
     if (id === 'fatal') return '致命意外';
     if (id === 'market') return '坊市开张';
     if (id.startsWith('regret:')) return '前世遗憾';
-    const e = [...CHOICES, ...FLAVORS, ...ENCOUNTERS].find((x) => x.id === id);
+    const e = [...ALL_CHOICES, ...FLAVORS, ...ENCOUNTERS].find((x) => x.id === id);
     return e ? e.text : '未知';
   }
 
@@ -802,7 +922,7 @@ export class Game {
     const bond = this.readyBond(loc, c.tag === '缘' || loc === 'karma');
     if (bond) return { id: `bond:${bond.comp}:${bond.n}`, bond };
     if (loc === 'bazaar' && L.marketCd === 0 && L.stones >= 40 && chance(0.6)) return { id: 'market' };
-    const choices = CHOICES.filter((e) => e.locs.includes(loc) && !L.choicesDone.includes(e.id) && (!e.when || e.when(L, this.M)));
+    const choices = ALL_CHOICES.filter((e) => e.locs.includes(loc) && !L.choicesDone.includes(e.id) && (!e.when || e.when(L, this.M)));
     const enc = ENCOUNTERS.filter((e) => e.locs.includes(loc) && (e.repeat || !L.choicesDone.includes(e.id)) && (!e.when || e.when(L, this.M)));
     const flav = FLAVORS.filter((e) => e.locs.includes(loc) && e.kind !== 'fatal' && (e.repeat || !L.choicesDone.includes(e.id)) && (!e.when || e.when(L, this.M)));
     const isChance = c.tag === '缘' || loc === 'fortune' || loc === 'karma' || loc === 'rift';
@@ -856,6 +976,13 @@ export class Game {
     if (c.loc === 'home' && !L.inDao) L.stones += Math.max(1, Math.floor(L.attrs.fam / 2));
     if (c.loc === 'trace') L.flags.extraCall = 1;
 
+    if (c.tag === '引' || c.tag === '故') {
+      const fought = { v: false };
+      if (c.tag === '引') await this.hookBeat(c, fought);
+      else await this.reunion(c, fought);
+      if (L.inDao) L.calm = fought.v ? 0 : L.calm + 1;
+      return;
+    }
     let picked: { id: string; ev?: LifeEvent; bond?: BondEvent } | null;
     if (c.peeked) picked = this.resolvePeeked(c);
     else picked = this.pickEvent(c);
@@ -880,7 +1007,7 @@ export class Game {
       const bond = BOND_EVENTS.find((b) => b.comp === comp && b.n === Number(n));
       return { id, bond };
     }
-    const ev = [...CHOICES, ...FLAVORS, ...ENCOUNTERS].find((x) => x.id === id);
+    const ev = [...ALL_CHOICES, ...FLAVORS, ...ENCOUNTERS].find((x) => x.id === id);
     return ev ? { id: '', ev } : null;
   }
 
@@ -894,8 +1021,12 @@ export class Game {
     const id = picked.id;
     if (id.startsWith('battle:')) {
       fought.v = true;
-      const kind: BattleKind = c.loc === 'realm' && chance(0.4) ? 'duel' : def.battle ?? 'beast';
-      await this.fight({ kind, title: id.slice(7), loc: c.loc, prep: true });
+      let kind: BattleKind = c.loc === 'realm' && chance(0.4) ? 'duel' : def.battle ?? 'beast';
+      const era = ERA_BY_ID[L.era ?? 'E1'];
+      if (kind === 'beast' && era?.duelBoost && chance(era.duelBoost)) kind = 'duel';
+      else if (kind === 'duel' && c.loc !== 'gate' && era?.beastBoost && chance(era.beastBoost)) kind = 'beast';
+      const title = kind === 'duel' && era?.duelTitles ? pick(era.duelTitles) : L.era === 'E3' && kind === 'beast' ? '海妖上岸' : id.slice(7);
+      await this.fight({ kind, title, loc: c.loc, prep: true });
       return;
     }
     if (id === 'fatal') return this.fatalAt(c.loc);
@@ -1012,11 +1143,230 @@ export class Game {
       if (this.M.saga.chiyiKills >= 3) this.gainPage(24);
     }
     if (e.epitaph) L.epitaphSpecial = e.epitaph;
+    // 一人千面
+    if (e.flag === 'giftSkill' || e.flag === 'pastNotes') {
+      if (L.inDao) this.addSkill(pick(['sword', 'orbit', 'thunder', 'fire', 'frost'] as SkillId[]));
+      else L.flags.pending_sword = 1;
+      if (e.flag === 'pastNotes') L.school[this.topSchool()] += 20;
+    }
+    if (e.flag === 'fortuneYear') L.flags.fortuneYear = L.age;
+    if (e.flag === 'fateKnown') this.log(`卦上写着：你活不过${cnAge(this.lifespan())}岁。`, 'fate');
+    if (e.acq) (L.acqNew ??= []).push({ role: e.acq.role, relation: e.acq.relation, src: 'event' });
+    if (e.hl) this.highlight(e.hl.text, e.hl.score, 'face');
+    if (e.insight) L.insightExtra = (L.insightExtra ?? 0) + e.insight;
+    if (e.bond) this.bondUp(e.bond);
+    if (e.next) {
+      const nb = (this.M.nextBonus ??= {});
+      if (e.next.chooseHook) nb.chooseHook = true;
+      if (e.next.regretKeep) L.flags.regretKeep = 1;
+    }
+    if (e.giveHook && !L.hook && !L.legend) {
+      L.hook = { id: e.giveHook, beat: 0, due: L.age + 1, deferred: 0 };
+      this.log(`本世引子：「${HOOK_BY_ID[e.giveHook].name}」`, 'fate');
+    }
     if (e.die) return this.die(e.die, loc);
     if (e.battle) {
-      fought.v = true;
-      await this.fight({ kind: e.battle.kind, title: e.battle.title, loc, elites: e.battle.elites, boss: e.battle.boss as Boss | undefined, reward: e.battle.reward, prep: true });
+      const b = e.battle;
+      let win: boolean | null;
+      if (b.cultOnly && !L.inDao) {
+        // 凡人身打不了这一仗，改为根骨判定
+        win = chance(Math.max(0.15, Math.min(0.85, 0.5 + (L.attrs.gen - 6) * 0.12)));
+        this.log(`（凡人之身，${b.title}只能硬扛：${win ? '扛过去了' : '没扛住'}）`);
+        if (!win) L.injuries += 2;
+      } else {
+        fought.v = true;
+        const res = await this.fight({ kind: b.kind, title: b.title, loc, elites: b.elites, boss: b.boss as Boss | undefined, reward: b.reward, prep: true });
+        win = res ? res.win : null;
+      }
+      if (!this.dead() && win !== null) {
+        const next = win ? b.win : b.lose;
+        if (next) await this.apply(next, loc, fought);
+      }
     }
+    if (e.hook && !this.dead()) await this.hookEnd(e.hook);
+  }
+
+  // ================= 一人千面：引子 =================
+  async pickHook(choose: boolean) {
+    const L = this.L;
+    const M = this.M;
+    if (L.legend) return;
+    const ok = HOOKS.filter((h) => h.cond(L, M, L.era!));
+    if (!ok.length) return;
+    const done = new Set((M.faces ?? []).map((f) => f.hook));
+    const w = (h: HookDef) => (done.has(h.id) ? 1 : 2);
+    let h: HookDef | undefined;
+    if (choose) {
+      const a = weighted(ok, w)!;
+      const b = weighted(ok.filter((x) => x !== a), w);
+      const cands = b ? [a, b] : [a];
+      const i = await this.choose({ title: '择世', text: '照命镜里浮出两段人生。这一世，你想做谁？', options: [...cands.map((c) => ({ label: `「${c.name}」`, desc: `${c.condText}｜了结：${c.reward}` })), { label: '都不要' }], style: 'legend', key: 'chooseHook' });
+      h = cands[i];
+    } else if (chance(0.6)) h = weighted(ok, w);
+    if (!h) return;
+    if (h.start.birth) L.hook = { id: h.id, beat: 1, due: L.age + randInt(5, 15), deferred: 0 };
+    else L.hook = { id: h.id, beat: 0, due: Math.max(L.age + 1, h.start.age ?? 6), deferred: 0 };
+  }
+
+  async hookBeat(c: Card, fought: { v: boolean }) {
+    const L = this.L;
+    const h = L.hook;
+    if (!h || h.outcome) return;
+    const def = HOOK_BY_ID[h.id];
+    const beat = def.beats[h.beat];
+    const ev = typeof beat.ev === 'string' ? IDENTITY_CHOICES.find((x) => x.id === beat.ev) ?? CHOICES.find((x) => x.id === beat.ev) : beat.ev;
+    const beatNo = h.beat;
+    if (ev?.options?.length) {
+      if (!L.choicesDone.includes(ev.id)) L.choicesDone.push(ev.id);
+      const opts = ev.options.filter((o) => !o.when || o.when(L, this.M));
+      const i = await this.ask(`引 · ${def.name}（${BEAT_NAMES[beatNo]}）`, ev.text, opts.map((o) => (o.desc ? `${o.label}｜${o.desc}` : o.label)), 'event', true, 'hook');
+      const o = opts[i];
+      this.log(`【${def.name}·${BEAT_NAMES[beatNo]}】${ev.text}你选择了「${o.label}」。`, 'fate', { loc: c.loc });
+      await this.applyOption(o, c.loc, fought);
+    }
+    if (this.dead() || !L.hook || L.hook.outcome) return;
+    h.beat = beatNo + 1;
+    h.deferred = 0;
+    if (h.beat >= 3) await this.hookEnd('done');
+    else h.due = L.age + (h.beat === 1 ? randInt(5, 15) : randInt(5, 20));
+  }
+
+  async hookEnd(outcome: 'done' | 'open', why?: string) {
+    const L = this.L;
+    const M = this.M;
+    const h = L.hook;
+    if (!h || h.outcome) return;
+    h.outcome = outcome;
+    const def = HOOK_BY_ID[h.id];
+    if (outcome === 'open') {
+      (L.acqNew ??= []).push({ role: def.acq.role, relation: def.acq.relation, src: 'hook' });
+      this.log(`「${def.name}」没有走完${why ? `（${why}）` : ''}。`, 'fate');
+      return;
+    }
+    const first = !(M.faces ?? []).some((f) => f.hook === h.id);
+    if (!(M.faces ?? []).some((f) => f.hook === h.id && f.era === L.era)) (M.faces ??= []).push({ hook: h.id, era: L.era! });
+    if (first) L.insightExtra = (L.insightExtra ?? 0) + 30;
+    const nb = (M.nextBonus ??= {});
+    switch (h.id) {
+      case 'Y01': L.insightExtra = (L.insightExtra ?? 0) + 40; break;
+      case 'Y02': nb.fam = (nb.fam ?? 0) + 2; break;
+      case 'Y03': L.school.body += 20; this.trace('soldier'); break;
+      case 'Y04': L.attrs.fam = Math.min(12, L.attrs.fam + 2); L.flags.wangsun = 1; break;
+      case 'Y05': nb.fortune = 1.5; break;
+      case 'Y06': L.stones += 100; break;
+      case 'Y07': L.school.alchemy += 20; L.merit += 50; break;
+      case 'Y08': if (!M.discoveries.includes('storybook')) M.discoveries.push('storybook'); break;
+      case 'Y09': this.bondUp('chiyi'); break;
+      case 'Y10': L.merit += 40; L.inspire += 1; break;
+      case 'Y11': L.flags.wolfKin = 1; break;
+      case 'Y12': nb.reroll = 1; break;
+      case 'Y13': L.merit += 80; this.trace('ink_touched'); break;
+      case 'Y14': nb.fam = (nb.fam ?? 0) + 3; break;
+      case 'Y15': L.merit += 60; L.flags.siluExtra = 1; break;
+      case 'Y16': L.inspire += 1; break;
+    }
+    this.log(`引子了结：「${def.name}」——${def.reward}${first ? '；首次了结，记入千面录，宿慧 +30' : ''}。`, 'fate');
+    this.highlight(`了结「${def.name}」`, 65, 'hook');
+    // 前世遗憾「引子未了」：了结任意引子即算弥补
+    if (L.regretsActive.some((r) => r.type === 'hook')) this.fixRegret('hook');
+  }
+
+  // ================= 一人千面：故人 =================
+  async reunion(c: Card, fought: { v: boolean }) {
+    const L = this.L;
+    const a = (this.M.acquaintances ?? []).find((x) => x.id === c.acq);
+    if (!a || a.resolved) return this.log(pick(L.inDao ? NOTHING_CULT : NOTHING_MORTAL));
+    L.acqMet!.push(a.id);
+    L.acqCards = (L.acqCards ?? 0) + 1;
+    a.lastSeen = L.lifeNo;
+    const shape = this.acqShape(a);
+    let text = ACQ_TEXT[a.relation][shape].replace(/\{名\}/g, a.name);
+    if (a.relation === 'grudge' && shape === 'later' && c.loc === 'cave') text = IDENTITY_CHOICES.find((x) => x.id === 'C-洞府-3')!.text;
+    if (a.relation === 'favor' && shape === 'later' && c.loc === 'bazaar') text = IDENTITY_CHOICES.find((x) => x.id === 'C-坊市-3')!.text;
+    const title = `故 · ${a.name}（${RELATION_NAMES[a.relation]}·${ACQ_SHAPE_NAMES[shape]}）`;
+    const resolve = async (extra: Effect = {}) => {
+      await this.apply(extra, c.loc, fought);
+      a.resolved = true;
+      (L.acqResolved ??= []).push({ id: a.id, relation: a.relation, earlier: shape === 'earlier' });
+      this.log(`与${a.name}的这段${RELATION_NAMES[a.relation]}，了了。`, 'fate');
+      this.highlight(`了结与${a.name}的${RELATION_NAMES[a.relation]}`, 65, 'acq');
+      if (a.relation === 'grudge' && shape === 'earlier' && L.wish?.id === 'W43') this.completeWish();
+    };
+    let i: number;
+    if (a.relation === 'favor') {
+      i = await this.ask(title, text, shape === 'earlier' ? ['先结个善缘｜功德 +20，了结', '装作不认识'] : ['收下｜灵石 +50，了结', '转赠旁人｜功德 +30，了结', '不收｜下次再说'], 'event', true, 'acq');
+      if (shape === 'earlier') return i === 0 ? resolve({ merit: 20 }) : undefined;
+      if (i === 0) return resolve({ stones: 50 });
+      if (i === 1) return resolve({ merit: 30 });
+      return;
+    }
+    if (a.relation === 'grudge') {
+      const opts = shape === 'earlier' ? ['化解｜这段仇不必发生，了结', '避开'] : [L.inDao ? '斗法了断｜胜则了结，修为 +5%' : '动手｜根骨判定', '化解｜悟性判定，成则了结，功德 +30', '避开'];
+      i = await this.ask(title, text, opts, 'event', true, 'acq');
+      if (shape === 'earlier') return i === 0 ? resolve({ merit: 20 }) : undefined;
+      if (i === 0) {
+        if (L.inDao) {
+          fought.v = true;
+          const res = await this.fight({ kind: 'duel', title: `了断 · ${a.name}`, loc: c.loc, elites: 1, prep: true });
+          if (res?.win && !this.dead()) return resolve({ xpPct: 5 });
+          return;
+        }
+        if (chance(0.5 + (L.attrs.gen - 6) * 0.12)) return resolve({ kill: true });
+        L.injuries += 2;
+        return this.log('你没打过。');
+      }
+      if (i === 1) {
+        const ok = chance(Math.max(0.1, Math.min(0.95, 0.5 + (L.attrs.wu - 6) * 0.12)));
+        this.log(`（悟性判定${ok ? '成功' : '失败'}）`);
+        if (ok) return resolve({ merit: 30 });
+      }
+      return;
+    }
+    i = await this.ask(title, text, shape === 'earlier' ? ['许下这个诺｜了结', '不许'] : ['去做那件事｜年龄 +1，功德 +20，了结', '推说日后'], 'event', true, 'acq');
+    if (i === 0) return resolve(shape === 'earlier' ? {} : { age: 1, merit: 20 });
+  }
+
+  // 结算时把本世结下的故人写进轮回数据
+  settleAcquaintances(): string[] {
+    const L = this.L;
+    const M = this.M;
+    const lines: string[] = [];
+    const list = (M.acquaintances ??= []);
+    // 了结的移出
+    for (const r of L.acqResolved ?? []) {
+      const a = list.find((x) => x.id === r.id);
+      if (!a) continue;
+      list.splice(list.indexOf(a), 1);
+    }
+    // 五世未再遇就散了
+    for (const a of list.slice()) {
+      if (L.lifeNo - a.lastSeen >= 5) {
+        list.splice(list.indexOf(a), 1);
+        lines.push(`${a.name}：散了。司灯：「${ACQ_GONE}」`);
+      }
+    }
+    const fresh = (L.acqNew ?? []).slice().sort((x, y) => (x.src === 'event' ? 0 : 1) - (y.src === 'event' ? 0 : 1)).slice(0, 2);
+    for (const f of fresh) {
+      const name = `${f.role}${f.role.length <= 2 ? pick(ACQ_NICK) : ''}`;
+      const a: Acquaintance = { id: `A${L.lifeNo}-${list.length}-${randInt(100, 999)}`, name, role: f.role, relation: f.relation, era: L.era ?? 'E1', life: L.lifeNo, lastSeen: L.lifeNo, resolved: false };
+      list.push(a);
+      lines.push(`${name}（${RELATION_NAMES[f.relation]}）：会在之后的某一世回来。`);
+    }
+    while (list.length > 8) list.shift();
+    return lines;
+  }
+
+  fixRegret(type: string) {
+    const L = this.L;
+    const fixedRegret = L.regretsActive.find((x) => x.type === type);
+    if (!fixedRegret) return;
+    L.regretsActive = L.regretsActive.filter((x) => x !== fixedRegret);
+    this.M.regrets = this.M.regrets.filter((x) => x.type !== type);
+    L.regretFixed = true;
+    this.log(REGRETS[type]?.fixed ?? '前世的遗憾，了了。', 'fate');
+    this.highlight('弥补了一件前世遗憾', 60, 'regret');
+    this.gainPage(8);
+    if (L.wish?.id === 'W07') this.completeWish();
   }
 
   async bondEvent(b: BondEvent, fought: { v: boolean }) {
@@ -1162,7 +1512,10 @@ export class Game {
     const k = kind === 'beast' ? 'B' : kind === 'duel' ? 'D' : 'T';
     const pool = MUTATORS.filter((m) => tags.has(m.trace) && m.kinds.includes(k));
     const out: Mutator[] = [];
-    for (let i = 0; i < 2; i++) {
+    const forced = ERA_BY_ID[L.era ?? 'E1']?.mutator;
+    const fm = forced ? MUTATORS.find((m) => m.id === forced && m.kinds.includes(k)) : undefined;
+    if (fm) out.push(fm);
+    for (let i = out.length; i < 2; i++) {
       const avail = pool.filter((m) => !out.includes(m) && !out.some((o) => o.type === m.type));
       const m = weighted(avail, (x) => tags.get(x.trace) ?? 1);
       if (m) out.push(m);
@@ -1234,6 +1587,10 @@ export class Game {
         return null;
       }
     }
+    if (o.kind === 'beast' && L.flags.wolfKin && !formation) {
+      formation = true;
+      this.log('山里的狼妖认得你的气味，妖潮比往常稀了些。', 'battle');
+    }
     if (mutators.length) this.log(`战场词条：${mutators.map((m) => m.name).join('、')}`, 'battle');
     const foxGuard = this.lamp('fox') >= 5 && !L.flags.foxDead && !L.flags.foxAway && L.inDao;
     const firstOfRealm = !L.firstRealmBattle.includes(realm) && !o.tutorial;
@@ -1259,6 +1616,7 @@ export class Game {
       formation,
       boss,
       heartDemon: isTrial && realm === 4,
+      heartMod: (L.flags.heartUp ? 1 : 0) - (L.flags.heartDown ? 1 : 0),
       scholar: mutators.some((m) => m.id === 'M21'),
       ascetic: mutators.some((m) => m.id === 'M24'),
       reward,
@@ -1440,6 +1798,9 @@ export class Game {
       }
       case 'W13': prog = Object.keys(L.bonds).length / 2; done = Object.keys(L.bonds).length >= 2; break;
       case 'W17': prog = L.realm / 5; break;
+      case 'W41': prog = faceKinds(this.M) / 12; done = faceKinds(this.M) >= 12; break;
+      case 'W42': prog = (L.acqResolved?.length ?? 0) / 3; done = (L.acqResolved?.length ?? 0) >= 3; break;
+      case 'W43': prog = L.acqResolved?.some((r) => r.relation === 'grudge' && r.earlier) ? 1 : 0.1; done = prog === 1; break;
       case 'W18': prog = this.M.saga.knocks / 3; break;
       default:
         if (d.page) prog = 0.2;
@@ -1464,6 +1825,7 @@ export class Game {
     const L = this.L;
     const M = this.M;
     M.deaths += 1;
+    if (L.hook && !L.hook.outcome) await this.hookEnd('open', '到死没走完');
     this.checkWish(true);
     if (!L.inDao && (L.deathCause === '寿终正寝' || L.ended === '人间一世') && L.merit >= 150) this.gainPage(7);
     if (M.deaths === 1) this.gainPage(1);
@@ -1497,6 +1859,13 @@ export class Game {
       }
     }
     if (L.regretFixed) insight += 20 + 10 * M.saga.volume;
+    // 一人千面：引子与故人的宿慧
+    let faceInsight = L.insightExtra ?? 0;
+    for (const r of L.acqResolved ?? []) {
+      faceInsight += r.relation === 'favor' ? 20 : 30;
+      if (r.relation === 'vow') (M.nextBonus ??= {}).rerollOnce = ((M.nextBonus ??= {}).rerollOnce ?? 0) + 1;
+    }
+    insight += faceInsight;
     M.insight += insight;
     if (ascended) M.ascensions += 1;
 
@@ -1504,10 +1873,23 @@ export class Game {
     await this.choose({ title: '墓志铭', text: epText, options: [{ label: '收起墓志铭' }], style: 'epitaph', important: true });
     await this.choose({
       title: '本世结算',
-      text: `评分 ${score} · 评级 ${grade}\n境界：${ascended ? '飞升' : REALMS[L.realm].name}　享年：${L.age}\n功德 ${L.merit}　斩墨 ${L.kills}\n宿慧 +${insight}（共 ${M.insight}）${wd ? `\n心愿「${wd.name}」圆满` : L.wish ? `\n心愿「${this.wishDef(L.wish.id)?.name}」未成（${Math.round(L.wish.progress * 100)}%）` : ''}`,
+      text: `评分 ${score} · 评级 ${grade}\n境界：${ascended ? '飞升' : REALMS[L.realm].name}　享年：${L.age}\n功德 ${L.merit}　斩墨 ${L.kills}\n宿慧 +${insight}（共 ${M.insight}）${faceInsight ? `，其中引子与故人 +${faceInsight}` : ''}${wd ? `\n心愿「${wd.name}」圆满` : L.wish ? `\n心愿「${this.wishDef(L.wish.id)?.name}」未成（${Math.round(L.wish.progress * 100)}%）` : ''}`,
       options: [{ label: '继续' }],
       style: 'well',
     });
+
+    // 故人与千面录
+    const kindsBefore = faceKinds(M) - (L.hook?.outcome === 'done' && (M.faces ?? []).filter((f) => f.hook === L.hook!.id).length === 1 ? 1 : 0);
+    const acqLines = this.settleAcquaintances();
+    const kinds = faceKinds(M);
+    if (kindsBefore < 3 && kinds >= 3) acqLines.push('千面录集齐 3 种引子：引子「说书人」可能出现了。');
+    if (kindsBefore < 6 && kinds >= 6) acqLines.push('千面录集齐 6 种引子：轮回盘新增「择世」。');
+    if (kindsBefore < 12 && kinds >= 12) {
+      acqLines.push('千面录集齐 12 种引子：称号「一人千面」。');
+      if (!M.discoveries.includes('faces12')) M.discoveries.push('faces12');
+    }
+    M.lastEra = L.era ?? null;
+    if (acqLines.length) await this.choose({ title: '故人', text: acqLines.join('\n'), options: [{ label: '记下' }], style: 'well' });
 
     // 前世遗憾
     const reg = this.makeRegret();
@@ -1560,7 +1942,9 @@ export class Game {
     }
 
     // 司灯对白
-    await this.choose({ title: '司灯', text: this.siluLine(newPages, endingKey, oldSilu), options: [{ label: '……' }], style: 'well' });
+    let silu = this.siluLine(newPages, endingKey, oldSilu);
+    if (L.flags.siluExtra) silu += '\n\n她看了一眼你守过的那座小庙：「庙火没灭。我替你记着。」';
+    await this.choose({ title: '司灯', text: silu, options: [{ label: '……' }], style: 'well' });
 
     // 井底（隐藏 H3）
     if (M.discoveries.includes('well') && !M.discoveries.includes('H3')) {
@@ -1626,6 +2010,7 @@ export class Game {
     let title = '';
     if (L.epitaphSpecial === '井中人') return { life: L.lifeNo, title: '井中人', lines: ['他跳进了另一口井。'], death: '', grade: '' };
     if (endingKey) title = ENDINGS[endingKey as keyof typeof ENDINGS].name;
+    else if (L.flags.wangsun && !L.ended) title = '王孙';
     else if (L.ended === '叩门') title = '叩门人';
     else if (L.ended) title = L.ended;
     else if (!L.inDao && L.age >= 60) title = `${L.origin.slice(0, 2)}某翁`;
@@ -1650,11 +2035,12 @@ export class Game {
     }
     if (L.wish && !L.wish.done && L.wish.progress >= 0.6) cands.push({ type: 'wish', ref: L.wish.id, text: REGRETS.wish.show.replace('{心愿}', this.wishDef(L.wish.id)?.name ?? ''), score: 70 });
     if (L.flags.grudge) cands.push({ type: 'grudge', ref: '', text: REGRETS.grudge.show, score: 60 });
+    if (L.hook?.outcome === 'open') cands.push({ type: 'hook', ref: L.hook.id, text: REGRETS.hook.show.replace('{引子}', HOOK_BY_ID[L.hook.id].name), score: 55 });
     if (L.skills.some((s) => s.lvl >= 4)) cands.push({ type: 'treasure', ref: 'fortune', text: REGRETS.treasure.show.replace('{法宝}', SKILL_NAMES[L.skills.reduce((a, b) => (a.lvl >= b.lvl ? a : b)).id]), score: 50 });
     if (L.ended) return null;
     const best = cands.sort((a, b) => b.score - a.score)[0];
     if (!best) return null;
-    return { type: best.type, ref: best.ref, text: best.text, bornLife: L.lifeNo, expires: L.lifeNo + 3 };
+    return { type: best.type, ref: best.ref, text: best.text, bornLife: L.lifeNo, expires: L.lifeNo + 3 + (L.flags.regretKeep ? 1 : 0) };
   }
 
   siluLine(newPages: number[], endingKey: string | null, oldSilu: number): string {
@@ -1673,7 +2059,7 @@ export class Game {
     if (L.wish && !L.wish.done && L.wish.progress >= 0.6) return SILU_TRIGGER.wishFail;
     if (lampOf(M, null, 'silu') >= 7) return SILU_TRIGGER.dim;
     void oldSilu;
-    const lines = SILU_DAILY[M.saga.volume];
+    const lines = faceKinds(M) >= 1 ? [...SILU_DAILY[M.saga.volume], ...FACES_SILU] : SILU_DAILY[M.saga.volume];
     const line = lines[M.siluIdx % lines.length];
     M.siluIdx += 1;
     return line;

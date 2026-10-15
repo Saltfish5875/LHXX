@@ -259,6 +259,7 @@ export class BattleSim {
       if (s.heartDemon || s.boss === 'trial-mirror') {
         const m = this.spawnAt('mirror', 300, -200, true);
         m.tag = 'mirror';
+        if (s.heartMod) m.hp = m.maxHp = m.maxHp * Math.max(0.5, 1 + 0.3 * s.heartMod);
       }
     }
     if (this.mods.M16 && s.kind !== 'trial') {

@@ -17,9 +17,9 @@ const TEND = (args[1] ?? 'all') as Tendency | 'all';
 const SEED = Number(args[2] ?? 1);
 
 const SCORE: Record<Tendency, Record<string, number>> = {
-  safe: { 平: 2, 缘: 1, 劫: -3, 凶: -5 },
-  chance: { 平: 1, 缘: 3, 劫: -1, 凶: -3 },
-  war: { 平: 0, 缘: 1, 劫: 3, 凶: -2 },
+  safe: { 平: 2, 缘: 1, 劫: -3, 凶: -5, 引: 2.5, 故: 2.5 },
+  chance: { 平: 1, 缘: 3, 劫: -1, 凶: -3, 引: 3.5, 故: 3.5 },
+  war: { 平: 0, 缘: 1, 劫: 3, 凶: -2, 引: 2, 故: 2 },
 };
 
 interface Stats {
@@ -38,13 +38,22 @@ interface Stats {
   endings: string[];
   errors: number;
   trials: Record<string, [number, number]>;
+  cardsTotal: number;
+  cardsFace: number;
+  hookLives: number;
+  hookDone: number;
+  reunions: number;
+  acqResolved: number;
+  eras: Record<string, number>;
+  eraRepeat: number;
 }
 
 async function run(tend: Tendency): Promise<Stats> {
   setSeed(SEED * 1000 + tend.length);
   const meta = newMeta();
   meta.settings.tendency = tend;
-  const st: Stats = { decisions: 0, rounds: 0, nothing: 0, battles: 0, battlesWon: 0, deaths: {}, ages: [], realms: [], pagesByLife: [], firstRepeatLife: null, wishes: 0, wishesDone: 0, endings: [], errors: 0, trials: {} };
+  const st: Stats = { decisions: 0, rounds: 0, nothing: 0, battles: 0, battlesWon: 0, deaths: {}, ages: [], realms: [], pagesByLife: [], firstRepeatLife: null, wishes: 0, wishesDone: 0, endings: [], errors: 0, trials: {}, cardsTotal: 0, cardsFace: 0, hookLives: 0, hookDone: 0, reunions: 0, acqResolved: 0, eras: {}, eraRepeat: 0 };
+  let lastEra: string | undefined;
   const seenChoices = new Set<string>();
   let lifeNo = 0;
   const io: IO = {
@@ -71,6 +80,8 @@ async function run(tend: Tendency): Promise<Stats> {
     },
     async deal(v: DealView): Promise<DealAction> {
       st.rounds += 1;
+      st.cardsTotal += v.cards.length;
+      st.cardsFace += v.cards.filter((c) => c.tag === '引' || c.tag === '故').length;
       const tags = new Set(v.cards.map((c) => c.tag));
       if (tags.size > 1) st.decisions += 1;
       let best = 0;
@@ -129,6 +140,13 @@ async function run(tend: Tendency): Promise<Stats> {
       break;
     }
     const L = g.L;
+    if (L.hook) st.hookLives += 1;
+    if (L.hook?.outcome === 'done') st.hookDone += 1;
+    st.reunions += L.acqMet?.length ?? 0;
+    st.acqResolved += L.acqResolved?.length ?? 0;
+    st.eras[L.era ?? '?'] = (st.eras[L.era ?? '?'] ?? 0) + 1;
+    if (L.era === lastEra) st.eraRepeat += 1;
+    lastEra = L.era;
     const cause = L.ended ?? L.deathCause ?? '未知';
     st.deaths[cause] = (st.deaths[cause] ?? 0) + 1;
     st.ages.push(L.age);
@@ -163,6 +181,8 @@ function report(tend: Tendency, st: Stats, meta: ReturnType<typeof newMeta>) {
   console.log(`心愿 ${st.wishesDone}/${st.wishes} 圆满；结局 ${st.endings.join(' ') || '无'}；宿慧余 ${meta.insight}；轮回盘 ${JSON.stringify(meta.wheel)}`);
   console.log(`每 5 世天书进度：${st.pagesByLife.filter((_, i) => i % 5 === 4).join(' → ')}`);
   console.log(`天劫胜/场（按境界）：${Object.entries(st.trials).sort().map(([k, [w, n]]) => `${k} ${w}/${n}`).join('，')}`);
+  console.log(`一人千面：有引子的世 ${((st.hookLives / Math.max(1, n)) * 100).toFixed(0)}%（目标 50～65%）；引子了结率 ${((st.hookDone / Math.max(1, st.hookLives)) * 100).toFixed(0)}%（目标 30～50%）；每世故人再遇 ${(st.reunions / Math.max(1, n)).toFixed(2)}（目标 0.5～1.2），了结 ${st.acqResolved}；「引」「故」卡占比 ${((st.cardsFace / Math.max(1, st.cardsTotal)) * 100).toFixed(1)}%（目标 ≤ 8%）`);
+  console.log(`年代分布 ${JSON.stringify(st.eras)}；与上一世同年代 ${st.eraRepeat} 次（目标 0）；千面录 ${new Set((meta.faces ?? []).map((f) => f.hook)).size} 种引子，故人在册 ${(meta.acquaintances ?? []).length}`);
   if (st.errors) console.log(`!!! 出错 ${st.errors} 次`);
 }
 

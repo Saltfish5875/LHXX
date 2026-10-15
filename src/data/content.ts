@@ -187,6 +187,10 @@ export const WISHES: WishDef[] = [
   { id: 'W38', name: '瓶中岁月', cond: '本世完成掌天瓶一段事件', kind: 'companion', lamp: 'bottle' },
   { id: 'W39', name: '神仙眷侣', cond: '与道侣同一回合突破化神', kind: 'companion' },
   { id: 'W40', name: '为你挡雷', cond: '伙伴替你挡下致命一击后你仍活过本场', kind: 'companion' },
+  // 一人千面
+  { id: 'W41', name: '一人千面', cond: '千面录集齐 12 种引子', kind: 'challenge', unlock: 2 },
+  { id: 'W42', name: '因果了了', cond: '一世了结 3 位故人', kind: 'challenge', unlock: 0 },
+  { id: 'W43', name: '改写前缘', cond: '在更早的年代化解一位「仇」故人', kind: 'challenge', unlock: 2 },
 ];
 
 // 前世遗憾
@@ -200,6 +204,7 @@ export interface RegretDef {
 export const REGRETS: Record<string, RegretDef> = {
   breakthrough: { type: 'breakthrough', show: '差 {数值} 修为就能{下一境界}。', open: '你在洞府里发现一座旧蒲团，坐上去就想起了什么。', fixed: '这一步，上辈子就该迈过去。', score: 80 },
   place: { type: 'place', show: '{年龄}岁，若那年没去{地点}……', open: '你一走近{地点}，心里就发寒。', fixed: '这一次，你平安走过了{地点}。', score: 75 },
+  hook: { type: 'hook', show: '「{引子}」，没有走完。', open: '', fixed: '这一世，你把一个故事讲完了。', score: 55 },
   wish: { type: 'wish', show: '「{心愿}」，就差一点。', open: '', fixed: '这个心愿，终于了了。', score: 70 },
   bond: { type: 'bond', show: '{人}的事，还没有结果。', open: '{人}比上一世早十年出现在你面前。', fixed: '这一世，你赶上了。', score: 65 },
   grudge: { type: 'grudge', show: '仇人还活着。', open: '隔壁搬来一户人家，那孩子看你的眼神不对。', fixed: '上一世的帐，这一世算清了。', score: 60 },

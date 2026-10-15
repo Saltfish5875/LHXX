@@ -35,6 +35,7 @@ export interface BattleSpec {
   formation: boolean;
   boss?: Boss;
   heartDemon: boolean; // 元婴劫的心魔镜像
+  heartMod?: number; // 心魔难度 ±1（一人千面抉择）
   scholar: boolean;
   ascetic: boolean;
   reward: number;

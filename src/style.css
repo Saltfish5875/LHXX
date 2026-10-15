@@ -289,6 +289,90 @@ button {
 .tag-xiong {
   background: #f4f4f4;
 }
+.tag-yin .c-tag {
+  background: var(--gold);
+}
+.tag-yin {
+  border-color: rgba(180, 138, 44, 0.6);
+  background: #fdf9ef;
+}
+.tag-gu .c-tag {
+  background: var(--purple);
+}
+.tag-gu {
+  border-color: rgba(107, 79, 143, 0.5);
+  background: #f8f5fc;
+}
+.tag-yin .c-icon {
+  color: var(--gold);
+}
+.tag-gu .c-icon {
+  color: var(--purple);
+}
+.era {
+  margin: 10px 0 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #eef4f7;
+  border: 1px solid var(--line);
+  font-size: 13px;
+}
+.era b {
+  font-family: var(--serif);
+  color: var(--blue);
+  margin-right: 8px;
+}
+.era span {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.hookline {
+  font-size: 13px;
+  margin-top: 6px;
+}
+.hookline b {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
+  text-align: center;
+  border-radius: 4px;
+  background: var(--gold);
+  color: #fff;
+  margin-right: 6px;
+  font-family: var(--serif);
+}
+.hookline b.gu {
+  background: var(--purple);
+}
+.hookline span {
+  color: var(--ink-2);
+  margin-left: 6px;
+  font-size: 12px;
+}
+.faces {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 6px;
+}
+.face {
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--ink-2);
+  display: flex;
+  flex-direction: column;
+}
+.face.got {
+  border-style: solid;
+  border-color: rgba(180, 138, 44, 0.6);
+  background: #fdf9ef;
+  color: var(--ink);
+}
+.face b {
+  font-size: 13px;
+}
 .deal-actions {
   display: flex;
   gap: 8px;

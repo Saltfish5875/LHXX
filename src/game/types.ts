@@ -3,7 +3,8 @@ import type { CompanionId } from '../data/content';
 
 export type BattleKind = 'beast' | 'duel' | 'trial';
 export type Tendency = 'safe' | 'chance' | 'war';
-export type CardTag = '劫' | '缘' | '凶' | '平';
+export type CardTag = '劫' | '缘' | '凶' | '平' | '引' | '故';
+export type AcqRelation = 'favor' | 'grudge' | 'vow';
 
 // 战斗中可升阶的法宝 / 道法（跨战斗保留，一世有效）
 export type SkillId = 'sword' | 'orbit' | 'thunder' | 'fire' | 'frost' | 'ink' | 'art';
@@ -36,12 +37,21 @@ export interface Effect {
   banLoc?: { loc: string; years: number };
   reroll?: number;
   skill?: SkillId;
-  battle?: { kind: BattleKind; title: string; elites?: number; boss?: string; reward?: number };
+  battle?: { kind: BattleKind; title: string; elites?: number; boss?: string; reward?: number; win?: Effect; lose?: Effect; cultOnly?: boolean };
   die?: string;
   text?: string;
   epitaph?: string; // 隐藏墓志铭
   spareChiyi?: boolean;
   killChiyi?: boolean;
+  // 一人千面
+  hook?: 'done' | 'open'; // 立即了结 / 记为未了
+  giveHook?: string; // 本世没有引子时获得
+  acq?: { role: string; relation: AcqRelation }; // 生成一位故人
+  acqResolve?: boolean; // 了结当前再遇的故人
+  hl?: { text: string; score: number }; // 墓志铭高光
+  insight?: number; // 结算时额外宿慧
+  bond?: 'fox' | 'chiyi' | 'danzun' | 'bottle'; // 同行者本世进度 +1
+  next?: { fam?: number; fortune?: number; reroll?: number; rerollOnce?: number; chooseHook?: boolean; regretKeep?: number }; // 影响下一世
 }
 
 export interface Roll {
@@ -76,6 +86,26 @@ export interface Card {
   loc: string;
   tag: CardTag;
   peeked?: string; // 窥过的事件 id
+  acq?: string; // 「故」卡：故人 id
+}
+
+// 一人千面：引子、故人
+export interface HookState {
+  id: string;
+  beat: number; // 已走完的拍数 0～3
+  due: number; // 下一拍到期的年龄
+  deferred: number; // 当前拍已顺延的年数
+  outcome?: 'done' | 'open';
+}
+export interface Acquaintance {
+  id: string;
+  name: string;
+  role: string;
+  relation: AcqRelation;
+  era: string;
+  life: number;
+  lastSeen: number;
+  resolved: boolean;
 }
 
 export interface Wish {
@@ -142,6 +172,13 @@ export interface LifeState {
   caveVisits: number;
   mortalVisitsAfterSpirit: number;
   marketCd: number;
+  era?: string;
+  hook?: HookState | null;
+  acqMet?: string[];
+  acqNew?: { role: string; relation: AcqRelation; src: string }[]; // 本世结下、待结算的故人
+  acqResolved?: { id: string; relation: AcqRelation; earlier: boolean }[];
+  acqCards?: number;
+  insightExtra?: number;
 }
 
 export interface Regret {
@@ -184,5 +221,9 @@ export interface MetaState {
   siluIdx: number;
   achievements: string[];
   deaths: number;
+  acquaintances?: Acquaintance[];
+  faces?: { hook: string; era: string }[];
+  lastEra?: string | null;
+  nextBonus?: { fam?: number; fortune?: number; reroll?: number; rerollOnce?: number; chooseHook?: boolean };
   settings: { tendency: Tendency; speed: number };
 }
