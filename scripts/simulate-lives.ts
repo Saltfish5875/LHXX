@@ -7,6 +7,10 @@ import { setSeed, rand } from '../src/game/rng';
 import { TALENTS, AttrKey } from '../src/data/core';
 import type { Tendency, LogEntry } from '../src/game/types';
 import type { BattleSpec } from '../src/battle/spec';
+import { FATE_BY_ID, NOTHING_CULT_MORE, NOTHING_MORTAL_MORE } from '../src/data/fate';
+import { NOTHING_CULT, NOTHING_MORTAL } from '../src/data/events';
+
+const NOTHING = new Set([...NOTHING_MORTAL, ...NOTHING_MORTAL_MORE, ...NOTHING_CULT, ...NOTHING_CULT_MORE]);
 
 declare const process: { argv: string[]; env: Record<string, string | undefined>; exit(code: number): void };
 const DEBUG = !!process.env.SIMDEBUG;
@@ -46,13 +50,27 @@ interface Stats {
   acqResolved: number;
   eras: Record<string, number>;
   eraRepeat: number;
+  fates: Record<string, number>;
+  mismatch: number;
+  blocked: number;
+  blockedBy: Record<string, number>;
+  recovered: number;
+  retired: number;
+  choicesSeen: number;
+  choicesRepeat: number;
+  flavorTotal: number;
+  flavorDistinct: number;
+  trialBattles: number;
 }
 
 async function run(tend: Tendency): Promise<Stats> {
   setSeed(SEED * 1000 + tend.length);
   const meta = newMeta();
   meta.settings.tendency = tend;
-  const st: Stats = { decisions: 0, rounds: 0, nothing: 0, battles: 0, battlesWon: 0, deaths: {}, ages: [], realms: [], pagesByLife: [], firstRepeatLife: null, wishes: 0, wishesDone: 0, endings: [], errors: 0, trials: {}, cardsTotal: 0, cardsFace: 0, hookLives: 0, hookDone: 0, reunions: 0, acqResolved: 0, eras: {}, eraRepeat: 0 };
+  const st: Stats = { decisions: 0, rounds: 0, nothing: 0, battles: 0, battlesWon: 0, deaths: {}, ages: [], realms: [], pagesByLife: [], firstRepeatLife: null, wishes: 0, wishesDone: 0, endings: [], errors: 0, trials: {}, cardsTotal: 0, cardsFace: 0, hookLives: 0, hookDone: 0, reunions: 0, acqResolved: 0, eras: {}, eraRepeat: 0, fates: {}, mismatch: 0, blocked: 0, blockedBy: {}, recovered: 0, retired: 0, choicesSeen: 0, choicesRepeat: 0, flavorTotal: 0, flavorDistinct: 0, trialBattles: 0 };
+  let prevChoices = new Set<string>();
+  let curChoices = new Set<string>();
+  let lifeLogs: string[] = [];
   let lastEra: string | undefined;
   const seenChoices = new Set<string>();
   let lifeNo = 0;
@@ -70,11 +88,18 @@ async function run(tend: Tendency): Promise<Stats> {
         return buy.length ? buy[0].i : p.options.length - 1;
       }
       if (p.key === 'market') return p.options.length - 1;
+      // 铸道基：多数玩家会尽量顺着本命走
+      if (p.key === 'daoji') return !p.options[1]?.disabled && rand() < 0.7 ? 1 : 0;
       if (p.title.startsWith('瓶颈')) return 0;
       if (p.title === '飞升天门劫') return 0;
       if (p.key && p.key.startsWith('C-')) {
         if (seenChoices.has(p.key) && st.firstRepeatLife === null) st.firstRepeatLife = lifeNo;
         seenChoices.add(p.key);
+        if (!curChoices.has(p.key)) {
+          curChoices.add(p.key);
+          st.choicesSeen += 1;
+          if (prevChoices.has(p.key)) st.choicesRepeat += 1;
+        }
       }
       return en[Math.floor(rand() * en.length)]?.i ?? 0;
     },
@@ -101,7 +126,9 @@ async function run(tend: Tendency): Promise<Stats> {
       const r = autoBattle(spec);
       if (DEBUG) console.log("  [战斗结果]", r.win, r.hp);
       if (r.win) st.battlesWon += 1;
+      if (spec.title === '入门试炼') st.trialBattles += 1;
       if (spec.kind === 'trial') {
+        st.trialBattles += 1;
         const k = `${spec.realm}${spec.boss ? ':' + spec.boss : ''}`;
         const t = (st.trials[k] ??= [0, 0]);
         t[0] += r.win || r.survivedKnock ? 1 : 0;
@@ -122,7 +149,8 @@ async function run(tend: Tendency): Promise<Stats> {
     },
     log(e: LogEntry) {
       if (DEBUG) console.log("  ", e.text.slice(0, 80));
-      if (/^(这一年平平淡淡|日子一天天过|春去秋来|闭关无事|山中无甲子|修行如常)/.test(e.text)) st.nothing += 1;
+      if ((e.kind ?? 'normal') === 'normal' && !e.text.includes('你选择了')) lifeLogs.push(e.text);
+      if (NOTHING.has(e.text)) st.nothing += 1;
     },
     refresh() {},
     async pace() {},
@@ -132,6 +160,9 @@ async function run(tend: Tendency): Promise<Stats> {
   g.sim = true;
   for (let i = 0; i < LIVES; i++) {
     lifeNo = i + 1;
+    prevChoices = curChoices;
+    curChoices = new Set();
+    lifeLogs = [];
     try {
       await g.runLife(false);
     } catch (err) {
@@ -140,6 +171,17 @@ async function run(tend: Tendency): Promise<Stats> {
       break;
     }
     const L = g.L;
+    st.fates[L.fate ?? '?'] = (st.fates[L.fate ?? '?'] ?? 0) + 1;
+    if (L.capReason === 'daoji' || (L.daoji && L.fate && FATE_BY_ID[L.fate].paths.length && !FATE_BY_ID[L.fate].paths.includes(L.daoji))) st.mismatch += 1;
+    if (L.flags.blockedAt) {
+      st.blocked += 1;
+      const why = L.stall ? 'stall' : L.capReason ?? 'lifted';
+      st.blockedBy[why] = (st.blockedBy[why] ?? 0) + 1;
+      if (L.flags.turnedOk || (!L.stall && L.cap == null)) st.recovered += 1;
+    }
+    if (L.retired) st.retired += 1;
+    st.flavorTotal += lifeLogs.length;
+    st.flavorDistinct += new Set(lifeLogs).size;
     if (L.hook) st.hookLives += 1;
     if (L.hook?.outcome === 'done') st.hookDone += 1;
     st.reunions += L.acqMet?.length ?? 0;
@@ -174,7 +216,9 @@ function report(tend: Tendency, st: Stats, meta: ReturnType<typeof newMeta>) {
   console.log(`\n==== 倾向：${tend}（${n} 世，种子 ${SEED}）====`);
   console.log(`平均享年 ${avg(st.ages)}；最高境界分布 凡/练/筑/金/婴/化 = ${realmCount.join('/')}`);
   console.log(`回合 ${st.rounds}，有效决策 ${st.decisions}（每世 ${(st.decisions / Math.max(1, n)).toFixed(1)}）；无事回合占比 ${((st.nothing / Math.max(1, st.rounds)) * 100).toFixed(1)}%（目标 < 20%）`);
-  console.log(`劫难 ${st.battles} 场，胜 ${st.battlesWon}（${((st.battlesWon / Math.max(1, st.battles)) * 100).toFixed(0)}%）`);
+  console.log(`劫难 ${st.battles} 场，胜 ${st.battlesWon}（${((st.battlesWon / Math.max(1, st.battles)) * 100).toFixed(0)}%）；每世遭遇战（不含天劫与入门试炼） ${((st.battles - st.trialBattles) / Math.max(1, n)).toFixed(1)} 场`);
+  console.log(`命途：命格 ${JSON.stringify(st.fates)}；道基不合 ${st.mismatch} 世；修为尽头 ${st.blocked} 世（占入道的世 ${((st.blocked / Math.max(1, st.realms.filter((r) => r > 0).length)) * 100).toFixed(0)}%，目标 20～35%）${JSON.stringify(st.blockedBy)}；转机修上来 ${st.recovered}（${((st.recovered / Math.max(1, st.blocked)) * 100).toFixed(0)}%，目标 35～45%）；安度余生而终 ${st.retired}`);
+  console.log(`重复：抉择与上一世重复 ${((st.choicesRepeat / Math.max(1, st.choicesSeen)) * 100).toFixed(0)}%（目标 ≤ 25%）；流水不重样 ${((st.flavorDistinct / Math.max(1, st.flavorTotal)) * 100).toFixed(0)}%（每世 ${(st.flavorTotal / Math.max(1, n)).toFixed(0)} 条）`);
   console.log(`死因：${top.map(([k, v]) => `${k} ${v}`).join('，')}；单一死因占比 ${topShare}%（目标 ≤ 35%）`);
   console.log(`抉择首次重复：第 ${st.firstRepeatLife ?? '未重复'} 世（目标 ≥ 5）`);
   console.log(`天书 ${meta.saga.pages.length}/27：[${meta.saga.pages.join(',')}]；卷 ${meta.saga.volume}；叩门 ${meta.saga.knocks}；命灯 ${JSON.stringify(meta.saga.lamps)}`);

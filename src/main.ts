@@ -3,6 +3,7 @@ import './art/art.css';
 import { Game, DealAction, DealView, IO, Prompt, skillName } from './game/engine';
 import { loadLife, loadMeta, resetAll, saveMeta, lampOf } from './game/meta';
 import { runBattle } from './battle/view';
+import { FATE_BY_ID } from './data/fate';
 import { ATTR_NAMES, AttrKey, CN_NUM, REALMS, ROOTS, SCHOOL_NAMES, School, TALENT_BY_ID, Talent, cnAge } from './data/core';
 import { COMPANION_NAMES, CompanionId, LEGENDS, MUTATORS, PAGES, VOLUME_NAMES, WISHES } from './data/content';
 import type { LifeState, LogEntry, Tendency } from './game/types';
@@ -385,6 +386,8 @@ function refresh() {
   const lamps = (['silu', 'fox', 'chiyi', 'danzun', 'bottle'] as CompanionId[]).map((c) => `<span class="lamp" style="--l:${lampOf(meta, L, c) / 9}">${COMPANION_NAMES[c]}<i>${lampOf(meta, L, c)}</i></span>`).join('');
   const sch = L.schoolCur ? SCHOOL_NAMES[L.schoolCur] : '未定';
   const topSch = (Object.keys(L.school) as School[]).sort((a, b) => L.school[b] - L.school[a]).slice(0, 2).map((s) => `${SCHOOL_NAMES[s]} ${L.school[s]}`).join('、');
+  const fate = L.fate ? FATE_BY_ID[L.fate] : null;
+  const daoji = (L.daoji ? SCHOOL_NAMES[L.daoji] : '未铸') + (L.cap != null ? ` · 止于${REALMS[L.cap].name}` : '') + (L.stall ? ' · 道心蒙尘' : '') + (L.retired ? ' · 安度余生' : '');
   const hpLow = L.hp < L.maxHp * 0.3;
   mstatusEl.innerHTML = `
     <span class="ms-seal">${realm}</span>
@@ -407,6 +410,8 @@ function refresh() {
       <span>功德</span><b>${L.merit}</b>
       <span>人情</span><b>${L.favor}</b>
       <span>斩墨</span><b>${L.kills}</b>
+      <span>命格</span><b title="${fate ? esc(fate.short) : ''}">${fate?.name ?? '未知'}</b>
+      <span>道基</span><b class="small">${daoji}</b>
       <span>流派</span><b>${sch}</b>
       <span>道途</span><b class="small">${topSch}</b>
     </div>

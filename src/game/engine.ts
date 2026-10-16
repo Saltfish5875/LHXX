@@ -3,6 +3,7 @@ import { ATTR_NAMES, AttrKey, CN_NUM, REALMS, REALM_SCORE, ROOTS, SCHOOL_NAMES, 
 import { COMPANION_NAMES, COMPANION_QUOTE, CompanionId, ENDINGS, HIDDEN, LEGENDS, MUTATORS, Mutator, OPENING, PAGES, REGRETS, SILU_DAILY, SILU_TRIGGER, VOLUME_NAMES, WISHES, WishDef } from '../data/content';
 import { BATTLE_TITLES, CHOICES, ENCOUNTERS, FLAVORS, LOCATIONS, LOC_BY_ID, LifeEvent, LocationDef, NOTHING_CULT, NOTHING_MORTAL } from '../data/events';
 import { BOND_EVENTS, BondEvent } from '../data/companions';
+import { DEAD_END_TEXT, FATES, FATE_BY_ID, FATE_EVENTS, FLAVORS_MORE, NOTHING_CULT_MORE, NOTHING_MORTAL_MORE, ON_THE_WAY_CULT, ON_THE_WAY_MORTAL, RETIRE_LINES, TURN_EVENTS } from '../data/fate';
 import { ACQ_GONE, ACQ_NICK, ACQ_SHAPE_NAMES, ACQ_TEXT, AcqShape, ERAS, ERA_BY_ID, FACES_SILU, HOOKS, HOOK_BY_ID, HookDef, IDENTITY_CHOICES, RELATION_NAMES, eraIndex, faceKinds } from '../data/faces';
 import type { BattleSpec, BattleResult, PartnerSpec, Boss } from '../battle/spec';
 import type { Acquaintance, BattleKind, Card, CardTag, Effect, LifeState, LogEntry, MetaState, Option, Skill, SkillId, Tendency } from './types';
@@ -11,6 +12,10 @@ const BEAT_NAMES = ['起', '转', '结'];
 // 普通事件池里的身世抉择（只经「引」卡出现的除外）
 const POOL_IDENTITY = IDENTITY_CHOICES.filter((e) => !e.hookOnly && e.options && e.options.length);
 const ALL_CHOICES: LifeEvent[] = [...CHOICES, ...POOL_IDENTITY];
+const ALL_FLAVORS: LifeEvent[] = [...FLAVORS, ...FLAVORS_MORE];
+const ALL_NOTHING_MORTAL = [...NOTHING_MORTAL, ...NOTHING_MORTAL_MORE];
+const ALL_NOTHING_CULT = [...NOTHING_CULT, ...NOTHING_CULT_MORE];
+const LOOKUP: LifeEvent[] = [...ALL_CHOICES, ...ALL_FLAVORS, ...ENCOUNTERS, ...FATE_EVENTS, ...TURN_EVENTS];
 import { chance, pick, rand, randInt, shuffle, weighted } from './rng';
 import { UNLOCKS, WHEEL, hasPage, lampOf, saveLife, saveMeta, wheelPrice } from './meta';
 
@@ -80,7 +85,8 @@ export class Game {
     return REALMS[this.L.realm];
   }
   get step() {
-    return this.L.inDao ? REALMS[this.L.realm].step : 1;
+    const s = this.L.inDao ? REALMS[this.L.realm].step : 1;
+    return this.L.retired ? s * 2 : s;
   }
   has(t: string) {
     return this.L.talents.includes(t);
@@ -204,6 +210,15 @@ export class Game {
       acqResolved: [],
       acqCards: 0,
       insightExtra: 0,
+      fate: 'fangu',
+      daoji: null,
+      cap: null,
+      stall: null,
+      retired: false,
+      xpMul: 1,
+      turnAt: null,
+      turned: 0,
+      seen: {},
     };
     this.L = L;
     if (M.lives === 1 && !this.sim) {
@@ -242,6 +257,12 @@ export class Game {
       const s = TALENT_BY_ID[t].school;
       if (s) L.school[s] += 15;
     }
+    // 命格：随天赋流派加权
+    const fate = weighted(FATES, (f) => f.w(L))!;
+    L.fate = fate.id;
+    for (const s of fate.paths) L.school[s] += fate.paths.length > 1 ? 4 : 6;
+    if (fate.id === 'fangu') L.xpMul = 0.92;
+    (M.fates ??= []).includes(fate.id) || M.fates.push(fate.id);
     if (this.tflag('favor')) L.favor += 1;
     for (const c of ['fox', 'chiyi', 'danzun', 'bottle'] as CompanionId[]) if (this.M.saga.lamps[c] >= 2) L.favor += 1;
     L.favor = Math.min(L.favor, 3);
@@ -279,6 +300,7 @@ export class Game {
     const talentNames = L.talents.map((t) => TALENT_BY_ID[t].name).join('、');
     this.log(`画卷 · ${ERA_BY_ID[L.era].name}：${ERA_BY_ID[L.era].open}`, 'fate');
     this.log(`你出生在${L.origin}。天赋：${talentNames}。`, 'milestone');
+    this.log(`命格「${fate.name}」：${fate.birth}（${fate.short}）`, 'fate');
     if (L.hook) {
       const h = HOOK_BY_ID[L.hook.id];
       this.log(`本世引子：「${h.name}」${h.start.birth ? '——' + h.start.birth : ''}`, 'fate');
@@ -349,6 +371,14 @@ export class Game {
       L.acqResolved ??= [];
       L.acqCards ??= 0;
       L.insightExtra ??= 0;
+      L.fate ??= 'fangu';
+      L.daoji ??= L.realm >= 2 ? this.topSchool() : null;
+      L.cap ??= null;
+      L.stall ??= null;
+      L.xpMul ??= 1;
+      L.turnAt ??= null;
+      L.turned ??= 0;
+      L.seen ??= {};
       this.io.clearLog();
       for (const e of this.L.log) if (e.text) this.io.log(e);
       this.io.refresh();
@@ -391,7 +421,10 @@ export class Game {
       if (L.route === 'sect') g *= 1.1;
       if (this.tflag('lateBloomer') && L.age >= 30) g *= 1.4;
       if (L.injuries > 0) g *= 0.5;
+      g *= L.xpMul ?? 1;
+      if (L.stall) g = 0; // 道心蒙尘
       L.xp += g;
+      if (this.capped()) L.xp = Math.min(L.xp, this.need());
     }
     L.hp = Math.min(L.maxHp, L.hp + L.maxHp * (L.injuries > 0 ? 0.2 : 0.6));
     if (L.injuries > 0) L.injuries -= 1;
@@ -408,13 +441,24 @@ export class Game {
     if (this.dead()) return;
 
     if (L.inDao && L.xp >= REALMS[L.realm].need && L.hold === 0) {
-      await this.bottleneck();
+      if (this.blocked()) await this.deadEnd();
+      else await this.bottleneck();
+      if (this.dead()) return;
+    }
+    // 转机
+    if (L.turnAt != null && L.age >= L.turnAt) {
+      if (this.blocked()) await this.turningPoint();
+      else L.turnAt = null;
       if (this.dead()) return;
     }
 
     this.checkPages();
     this.checkWish();
     this.updateSchool();
+    if (L.retired) {
+      if (chance(0.5)) this.log(pick(RETIRE_LINES));
+      return;
+    }
     if (L.age <= 5) {
       if (L.age === 3) this.log(pick(['你学会了走路，跌跌撞撞追着鸡跑。', '你会喊爹娘了。']));
       return;
@@ -573,6 +617,145 @@ export class Game {
     }
   }
 
+  // ================= 命途分岔与修为尽头 =================
+  capped() {
+    const L = this.L;
+    return L.inDao && L.cap != null && L.realm >= L.cap;
+  }
+  blocked() {
+    return this.capped() || (this.L.inDao && !!this.L.stall);
+  }
+
+  // 筑基时铸道基：只能在「当前最高的道途」与「本命道途」之间选；本命落后太多就选不了
+  async castDaoji() {
+    const L = this.L;
+    const f = FATE_BY_ID[L.fate ?? 'fangu'];
+    const top = this.topSchool();
+    const paths = f.paths;
+    const best = paths.length ? paths.slice().sort((a, b) => L.school[b] - L.school[a])[0] : null;
+    const fits = (s: School) => paths.includes(s);
+    const opts: PromptOption[] = [];
+    const keys: School[] = [];
+    let pick0: School = top;
+    if (paths.length) {
+      opts.push({ label: `以${SCHOOL_NAMES[top]}铸基`, desc: `道途 ${L.school[top]}；${fits(top) ? '本命相合：修炼 ×1.25' : `与「${f.name}」不合：此世恐止步金丹`}` });
+      keys.push(top);
+      if (best && best !== top) {
+        const gap = L.school[top] - L.school[best];
+        const ok = gap <= 10;
+        opts.push({ label: `逆势以${SCHOOL_NAMES[best]}铸基`, desc: ok ? '本命相合：修炼 ×1.25；代价：折寿 15 年，气血上限 -10' : `道途已偏：${SCHOOL_NAMES[best]} ${L.school[best]}，落后 ${gap}（需在 10 以内）`, disabled: !ok });
+        keys.push(best);
+      }
+      const i = opts.length > 1 ? await this.choose({ title: '铸道基', text: `筑基之时，要把这些年走过的路铸成道基。道基一成，此世便只能沿着它走。\n\n命格「${f.name}」：${f.short}`, options: opts, style: 'milestone', key: 'daoji', important: true }) : 0;
+      pick0 = keys[i] ?? top;
+      if (pick0 !== top) {
+        L.lifeBonus -= 15;
+        L.flags.hpMax = (L.flags.hpMax ?? 0) - 10;
+        L.maxHp = this.calcMaxHp();
+        L.hp = Math.min(L.hp, L.maxHp);
+        L.school[pick0] = Math.max(L.school[pick0], L.school[top] + 5);
+      }
+    }
+    L.daoji = pick0;
+    L.schoolCur = pick0;
+    if (!paths.length) {
+      this.log(`道基铸成：${SCHOOL_NAMES[pick0]}。`, 'milestone');
+    } else if (fits(pick0)) {
+      L.xpMul = (L.xpMul ?? 1) * 1.25;
+      this.log(`道基铸成：${SCHOOL_NAMES[pick0]}。与「${f.name}」相合，修行一日千里。`, 'milestone');
+      this.highlight(`${f.name}铸${SCHOOL_NAMES[pick0]}道基`, 45, 'daoji');
+    } else {
+      L.cap = 3;
+      L.capReason = 'daoji';
+      this.log(`道基铸成：${SCHOOL_NAMES[pick0]}。可经脉里隐隐作痛——与「${f.name}」不合，此世修为恐怕过不了金丹。`, 'fate');
+    }
+  }
+
+  // 被困住以后，转机会不会来、什么时候来
+  scheduleTurn(p: number) {
+    const L = this.L;
+    if (L.turnAt != null || (L.turned ?? 0) >= 2) return;
+    if (chance(p + L.attrs.luck * 0.015 + (L.merit >= 150 ? 0.05 : 0))) L.turnAt = L.age + this.step * randInt(3, 12);
+  }
+
+  async deadEnd() {
+    const L = this.L;
+    L.xp = Math.min(L.xp, this.need());
+    if (L.flags.deadEndShown) return;
+    L.flags.deadEndShown = Math.max(1, L.age);
+    L.flags.blockedAt ??= Math.max(1, L.age);
+    const f = FATE_BY_ID[L.fate ?? 'fangu'];
+    const text = L.stall ? DEAD_END_TEXT.stall : L.capReason === 'daoji' ? f.deadEnd : DEAD_END_TEXT[L.capReason ?? ''] ?? DEAD_END_TEXT.stall;
+    this.log(`修为尽头：此世止于${REALMS[L.realm].name}。`, 'fate');
+    this.highlight(`止步${REALMS[L.realm].name}`, 30 + 10 * L.realm, 'deadEnd');
+    this.scheduleTurn(0.25);
+    const i = await this.ask('修为尽头', `${text}\n\n这一世的修行，走到头了。`, ['安度余生｜岁月流逝加快，转机仍可能到来', '入世再寻｜照常过日子，等一个转机'], 'milestone', true, 'deadEnd');
+    if (i === 0) {
+      L.retired = true;
+      this.log('你封了洞府，不再闭关。', 'milestone');
+    }
+  }
+
+  async turningPoint() {
+    const L = this.L;
+    L.turnAt = null;
+    L.turned = (L.turned ?? 0) + 1;
+    const ok = TURN_EVENTS.filter((e) => !L.choicesDone.includes(e.id) && (!e.when || e.when(L, this.M)));
+    if (!ok.length) return;
+    if (L.retired) this.log('岁月静好之中，转机来了。', 'fate');
+    await this.runEvent(pick(ok), L.inDao ? 'cave' : 'home', { v: false }, '转机');
+    if (this.dead()) return;
+    if (!this.blocked()) {
+      if (L.retired) this.log('你推开封了多年的洞府门。', 'milestone');
+      L.retired = false;
+      L.flags.turnedOk = 1;
+      this.log('前路重开。', 'fate');
+    } else this.scheduleTurn(0.2);
+  }
+
+  async applyFate(f: NonNullable<Effect['fate']>) {
+    const L = this.L;
+    if (f.tag) L.flags[f.tag] = Math.max(1, L.age);
+    if (f.capHere && L.inDao) {
+      L.cap = L.realm;
+      L.capReason = f.breakVow ?? 'event';
+      this.log(`此世修为，止于${REALMS[L.realm].name}。`, 'fate');
+    } else if (f.breakVow && L.inDao) {
+      L.stall = f.breakVow;
+      L.flags.blockedAt ??= Math.max(1, L.age);
+      this.log('道心蒙尘：修为停滞，劫雷不应。', 'fate');
+      this.scheduleTurn(0.3);
+    }
+    if (f.lift) {
+      if (L.cap != null) L.cap = f.lift >= 99 ? null : L.cap + f.lift;
+      if (L.cap == null) L.capReason = undefined;
+      delete L.flags.deadEndShown;
+    }
+    if (f.clearStall && L.stall) {
+      L.stall = null;
+      delete L.flags.deadEndShown;
+      this.log('道心复明。', 'fate');
+    }
+    if (f.xpMul) L.xpMul = (L.xpMul ?? 1) * f.xpMul;
+    if (f.retire) L.retired = true;
+    if (f.recast && L.inDao) {
+      L.realm = 2;
+      L.xp = 0;
+      L.cap = null;
+      L.capReason = undefined;
+      L.daoji = null;
+      L.retired = false;
+      delete L.flags.deadEndShown;
+      const fd = FATE_BY_ID[L.fate ?? 'fangu'];
+      if (fd.paths.length) L.school[fd.paths[0]] += 30;
+      if (L.xpMul && L.xpMul < 1) L.xpMul = 1;
+      L.maxHp = this.calcMaxHp();
+      L.hp = Math.min(L.hp, L.maxHp);
+      this.log('你跌回了筑基。', 'milestone');
+      await this.castDaoji();
+    }
+  }
+
   // ================= 瓶颈与渡劫 =================
   async bottleneck() {
     const L = this.L;
@@ -606,6 +789,7 @@ export class Game {
     L.hp = L.maxHp;
     const name = REALMS[L.realm].name;
     this.log(`渡劫成功，突破${name}！寿元大增。`, 'milestone');
+    if (L.realm === 2 && !L.daoji) await this.castDaoji();
     this.highlight(`渡${REALMS[L.realm - 1].trial}`, 60 + 10 * L.realm, 'realm');
     if (L.realm === 2) this.gainPage(4);
     if (L.realm === 3) this.gainPage(11);
@@ -655,7 +839,7 @@ export class Game {
     const locs = this.availableLocs();
     const danger = locs.filter((l) => l.danger);
     const chanceLocs = locs.filter((l) => l.chance);
-    const gathered = L.inDao && L.calm >= 3;
+    const gathered = L.inDao && L.calm >= 6;
     const s = { calamity: [] as string[], chance: [] as string[], omen: [] as string[], gathered };
     if (L.inDao) {
       if (gathered) s.calamity = danger.map((d) => d.id);
@@ -710,7 +894,7 @@ export class Game {
       add(L.nextLoc);
       L.nextLoc = null;
     }
-    for (const c of this.sign.calamity) if (chance(0.7) || this.sign.gathered) add(c);
+    for (const c of this.sign.calamity) if (chance(0.4) || this.sign.gathered) add(c);
     for (const c of this.sign.chance) if (chance(0.8)) add(c);
     for (const c of this.sign.omen) if (chance(0.5)) add(c);
     // 霉运缠身：每年第一次重发必出劫或凶
@@ -886,7 +1070,7 @@ export class Game {
     if (id === 'fatal') return '致命意外';
     if (id === 'market') return '坊市开张';
     if (id.startsWith('regret:')) return '前世遗憾';
-    const e = [...ALL_CHOICES, ...FLAVORS, ...ENCOUNTERS].find((x) => x.id === id);
+    const e = LOOKUP.find((x) => x.id === id);
     return e ? e.text : '未知';
   }
 
@@ -921,15 +1105,25 @@ export class Game {
     // 同行者事件
     const bond = this.readyBond(loc, c.tag === '缘' || loc === 'karma');
     if (bond) return { id: `bond:${bond.comp}:${bond.n}`, bond };
+    // 命格事件链：道途的诱惑、戒律与尘缘
+    const fe = FATE_EVENTS.filter((e) => e.locs.includes(loc) && !L.choicesDone.includes(e.id) && (!e.when || e.when(L, this.M)));
+    if (fe.length && chance(0.5)) return { id: '', ev: pick(fe) };
     if (loc === 'bazaar' && L.marketCd === 0 && L.stones >= 40 && chance(0.6)) return { id: 'market' };
+    const ok = (e: LifeEvent) => e.locs.includes(loc) && (e.repeat || !L.choicesDone.includes(e.id)) && (!e.when || e.when(L, this.M));
     const choices = ALL_CHOICES.filter((e) => e.locs.includes(loc) && !L.choicesDone.includes(e.id) && (!e.when || e.when(L, this.M)));
-    const enc = ENCOUNTERS.filter((e) => e.locs.includes(loc) && (e.repeat || !L.choicesDone.includes(e.id)) && (!e.when || e.when(L, this.M)));
-    const flav = FLAVORS.filter((e) => e.locs.includes(loc) && e.kind !== 'fatal' && (e.repeat || !L.choicesDone.includes(e.id)) && (!e.when || e.when(L, this.M)));
+    const enc = ENCOUNTERS.filter(ok);
+    const flav = ALL_FLAVORS.filter((e) => e.kind !== 'fatal' && ok(e));
+    // 同一世少重复：见过的流水与奇遇权重递减
+    const seenW = (e: LifeEvent) => 1 / (1 + 3 * (L.seen?.[e.id] ?? 0));
+    // 跨世冷却：最近两世见过的抉择尽量不再出
+    const recent = new Set((this.M.recentChoices ?? []).flat());
+    const fresh = choices.filter((e) => !recent.has(e.id));
     const isChance = c.tag === '缘' || loc === 'fortune' || loc === 'karma' || loc === 'rift';
-    if (isChance && enc.length && chance(0.75)) return { id: '', ev: pick(enc) };
-    if (choices.length && chance(isChance ? 0.8 : 0.55)) return { id: '', ev: pick(choices) };
-    if (enc.length && chance(0.3)) return { id: '', ev: pick(enc) };
-    if (flav.length) return { id: '', ev: pick(flav) };
+    if (isChance && enc.length && chance(0.75)) return { id: '', ev: weighted(enc, seenW)! };
+    const pc = (isChance ? 0.8 : 0.55) * (fresh.length ? 1 : 0.3);
+    if (choices.length && chance(pc)) return { id: '', ev: pick(fresh.length ? fresh : choices) };
+    if (enc.length && chance(0.3)) return { id: '', ev: weighted(enc, seenW)! };
+    if (flav.length) return { id: '', ev: weighted(flav, seenW)! };
     return null;
   }
 
@@ -975,6 +1169,11 @@ export class Game {
     if (c.loc === 'cave' && L.inDao) L.xp += this.need() * 0.03;
     if (c.loc === 'home' && !L.inDao) L.stones += Math.max(1, Math.floor(L.attrs.fam / 2));
     if (c.loc === 'trace') L.flags.extraCall = 1;
+    // 被困住时，去机缘、因果处寻转机
+    if (this.blocked() && (c.loc === 'fortune' || c.loc === 'karma')) {
+      if (L.turnAt != null) L.turnAt = Math.min(L.turnAt, L.age + this.step);
+      else this.scheduleTurn(0.1);
+    }
 
     if (c.tag === '引' || c.tag === '故') {
       const fought = { v: false };
@@ -994,7 +1193,7 @@ export class Game {
       else L.calm += 1;
     }
     // 「顺路」流水账
-    if (!this.dead() && chance(0.25)) this.log(pick(L.inDao ? ['顺路去坊市换了几株灵草。', '路上遇见一只灵鹤，跟了你半日。', '途中歇脚，听樵夫唱了一段山歌。'] : ['顺路给娘带了一包桂花糕。', '路上和小伙伴打了一架。', '在路边捡到一只受伤的麻雀。']));
+    if (!this.dead() && chance(0.25)) this.log(pick(L.inDao ? ON_THE_WAY_CULT : ON_THE_WAY_MORTAL));
   }
 
   resolvePeeked(c: Card) {
@@ -1007,7 +1206,7 @@ export class Game {
       const bond = BOND_EVENTS.find((b) => b.comp === comp && b.n === Number(n));
       return { id, bond };
     }
-    const ev = [...ALL_CHOICES, ...FLAVORS, ...ENCOUNTERS].find((x) => x.id === id);
+    const ev = LOOKUP.find((x) => x.id === id);
     return ev ? { id: '', ev } : null;
   }
 
@@ -1015,7 +1214,7 @@ export class Game {
     const L = this.L;
     const def = LOC_BY_ID[c.loc];
     if (!picked) {
-      this.log(pick(L.inDao ? NOTHING_CULT : NOTHING_MORTAL), 'normal', { loc: c.loc });
+      this.log(pick(L.inDao ? ALL_NOTHING_CULT : ALL_NOTHING_MORTAL), 'normal', { loc: c.loc });
       return;
     }
     const id = picked.id;
@@ -1053,9 +1252,10 @@ export class Game {
   }
 
   // ================= 事件解释器 =================
-  async runEvent(e: LifeEvent, loc: string, fought: { v: boolean }) {
+  async runEvent(e: LifeEvent, loc: string, fought: { v: boolean }, title?: string) {
     const L = this.L;
     if (!e.repeat) L.choicesDone.push(e.id);
+    else (L.seen ??= {})[e.id] = (L.seen[e.id] ?? 0) + 1;
     if (e.kind === 'flavor' || !e.options) {
       this.log(e.text, 'normal', { loc });
       if (e.eff) await this.apply(e.eff, loc, fought);
@@ -1063,7 +1263,7 @@ export class Game {
     }
     if (e.eff) await this.apply(e.eff, loc, fought);
     const opts = e.options.filter((o) => !o.when || o.when(L, this.M));
-    const i = await this.ask(LOC_BY_ID[loc]?.name ?? '抉择', e.text, opts.map((o) => (o.desc ? `${o.label}｜${o.desc}` : o.label)), 'event', false, e.id);
+    const i = await this.ask(title ?? LOC_BY_ID[loc]?.name ?? '抉择', e.text, opts.map((o) => (o.desc ? `${o.label}｜${o.desc}` : o.label)), 'event', false, e.id);
     const o = opts[i];
     this.log(`${e.text}你选择了「${o.label}」。`, 'normal', { loc });
     await this.applyOption(o, loc, fought);
@@ -1090,7 +1290,10 @@ export class Game {
     if (e.attr) for (const [k, v] of Object.entries(e.attr)) L.attrs[k as AttrKey] = Math.max(0, Math.min(12, L.attrs[k as AttrKey] + (v as number)));
     if (e.stones) L.stones = Math.max(0, L.stones + e.stones);
     if (e.merit) L.merit += e.merit;
-    if (e.xpPct && L.inDao) L.xp = Math.max(0, L.xp + this.need() * e.xpPct / 100);
+    if (e.xpPct && L.inDao && !(L.stall && e.xpPct > 0)) {
+      L.xp = Math.max(0, L.xp + this.need() * e.xpPct / 100);
+      if (this.capped()) L.xp = Math.min(L.xp, this.need());
+    }
     if (e.life) L.lifeBonus += e.life;
     if (e.age) L.age += e.age;
     if (e.school) for (const [k, v] of Object.entries(e.school)) L.school[k as School] += v as number;
@@ -1160,6 +1363,7 @@ export class Game {
       if (e.next.chooseHook) nb.chooseHook = true;
       if (e.next.regretKeep) L.flags.regretKeep = 1;
     }
+    if (e.fate) await this.applyFate(e.fate);
     if (e.giveHook && !L.hook && !L.legend) {
       L.hook = { id: e.giveHook, beat: 0, due: L.age + 1, deferred: 0 };
       this.log(`本世引子：「${HOOK_BY_ID[e.giveHook].name}」`, 'fate');
@@ -1825,6 +2029,7 @@ export class Game {
     const L = this.L;
     const M = this.M;
     M.deaths += 1;
+    M.recentChoices = [L.choicesDone.slice(), ...(M.recentChoices ?? [])].slice(0, 2);
     if (L.hook && !L.hook.outcome) await this.hookEnd('open', '到死没走完');
     this.checkWish(true);
     if (!L.inDao && (L.deathCause === '寿终正寝' || L.ended === '人间一世') && L.merit >= 150) this.gainPage(7);
@@ -2015,6 +2220,8 @@ export class Game {
     else if (L.ended) title = L.ended;
     else if (!L.inDao && L.age >= 60) title = `${L.origin.slice(0, 2)}某翁`;
     else if (!L.inDao && L.age < 20) title = '少年郎';
+    else if (L.capReason === 'love' && L.cap != null) title = '还俗人';
+    else if (this.capped() && L.fate && FATE_BY_ID[L.fate].paths.length) title = `止步${REALMS[L.realm].name}的${FATE_BY_ID[L.fate].name}`;
     else if (L.inDao && L.kills === 0 && L.realm >= 2) title = '不杀人';
     else if (L.kills >= 2000) title = '斩墨万计';
     else if (L.schoolCur) title = `${SCHOOL_NAMES[L.schoolCur]}${REALMS[L.realm].name}`;

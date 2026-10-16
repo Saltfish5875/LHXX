@@ -225,9 +225,10 @@ export const FLAVORS: LifeEvent[] = [
   ev({ id: 'f-cave2', locs: ['cave'], kind: 'flavor', text: '洞府外的松树又高了一截。闭关无事。', eff: { xpPct: 3 }, repeat: true }),
   ev({ id: 'f-quiet1', locs: ['quiet'], kind: 'flavor', text: '静坐调息，旧伤渐愈。', eff: { injure: -1, xpPct: 1 }, repeat: true }),
   ev({ id: 'f-sect1', locs: ['sect'], kind: 'flavor', text: '宗门分派了一桩差事，你办得妥帖。', eff: { stones: 15, favor: 1 }, repeat: true }),
-  ev({ id: 'f-tourney', locs: ['sect'], kind: 'choice', text: '宗门大比开锣。', repeat: true, options: [
-    { label: '参加', desc: '斗法，胜则灵石与修为', eff: { battle: { kind: 'duel', title: '宗门大比', elites: 2 } } },
-    { label: '观战', desc: '修为 +2%', eff: { xpPct: 2 } },
+  // 宗门大比十五年一届
+  ev({ id: 'f-tourney', locs: ['sect'], kind: 'choice', text: '宗门大比开锣。', repeat: true, when: (L) => L.age - (L.flags.tourneyAt ?? -99) >= 15, options: [
+    { label: '参加', desc: '斗法，胜则灵石与修为', eff: { fate: { tag: 'tourneyAt' }, battle: { kind: 'duel', title: '宗门大比', elites: 2 } } },
+    { label: '观战', desc: '修为 +2%', eff: { xpPct: 2, fate: { tag: 'tourneyAt' } } },
   ] }),
   ev({ id: 'f-roam1', locs: ['roam'], kind: 'flavor', text: '云游至一处古渡，与散修论道一夜。', eff: { xpPct: 3, stones: 8 }, repeat: true }),
   ev({ id: 'f-roam2', locs: ['roam'], kind: 'flavor', text: '你在雪山脚下住了一阵。', eff: { trace: 'snowfield', xpPct: 2 }, repeat: true }),
