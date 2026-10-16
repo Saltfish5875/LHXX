@@ -1655,3 +1655,7 @@ h4 .btn.sm {
   font-size: 12px;
   padding: 1px 8px;
 }
+.top-actions .bag-top-btn {
+  color: var(--gold);
+  font-weight: 700;
+}

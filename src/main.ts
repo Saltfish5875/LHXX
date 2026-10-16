@@ -723,7 +723,7 @@ function refresh() {
     <div class="d-only">${faceBlock(L)}</div>
     <h4>天赋</h4><div class="chips">${L.talents.map((t) => `<span class="chip g-${TALENT_BY_ID[t].grade}" title="${TALENT_BY_ID[t].desc}">${TALENT_BY_ID[t].name}</span>`).join('')}</div>
     ${boardBlock(L)}
-    ${L.inDao ? gongBlock(L) : ''}
+    ${gongBlock(L)}
     ${wish ? `<h4>心愿</h4><div class="wish ${L.wish!.done ? 'done' : ''}">「${wish.name}」${wish.cond}<br>${bar(L.wish!.progress, 1, 'wishbar', L.wish!.done ? '圆满' : Math.round(L.wish!.progress * 100) + '%')}</div>` : ''}
     ${L.traces.length ? `<h4>本世痕迹</h4><div class="chips">${L.traces.map((t) => `<span class="chip trace" title="${MUTATORS.find((m) => m.trace === t.tag)?.name ?? ''}">${MUTATORS.find((m) => m.trace === t.tag)?.name ?? t.tag}</span>`).join('')}</div>` : ''}
     <h4>命灯</h4><div class="lamps">${lamps}</div>`;
@@ -743,7 +743,7 @@ function gongBlock(L: LifeState) {
     .join('');
   const items = (L.bag ?? []).filter((t) => t.kind !== 'gong' && (L.load?.passive.includes(t.uid) || L.load?.active.includes(t.uid)));
   return `<h4>功法 <button class="btn sm" data-bag>行囊</button></h4>
-    <div class="gong-list">${rows || '<p class="muted">无</p>'}</div>
+    <div class="gong-list">${rows || `<p class="muted">${L.inDao ? '无' : '入道后择本命功法，法宝与附诀也在行囊里管理。'}</p>`}</div>
     <div class="p-row small"><span>心得 ${L.xinde ?? 0}</span><span>${items.length ? items.map((t) => t.name).join('、') : '未带法宝'}</span></div>`;
 }
 
@@ -852,7 +852,13 @@ function showSettings() {
 
 document.querySelectorAll<HTMLButtonElement>('[data-open]').forEach((b) => {
   b.onclick = () => {
-    if (modalEl.classList.contains('show') || battleEl.classList.contains('show')) return;
+    if (battleEl.classList.contains('show')) return;
+    // 行囊是独立浮层，弹窗开着也能看
+    if (b.dataset.open === 'bag') {
+      if (game?.L) openBag(game.L, refresh);
+      return;
+    }
+    if (modalEl.classList.contains('show')) return;
     if (b.dataset.open === 'panel') return togglePanel();
     togglePanel(false);
     ({ book: showBook, lamps: showLamps, past: showPast, settings: showSettings })[b.dataset.open as 'book']();

@@ -50,7 +50,8 @@ export function openBag(L: LifeState, onChange: () => void) {
     const scrap = bag.filter((t) => t.kind === 'gong' && !L.skills.some((s) => s.id === t.key));
     root.innerHTML = `<div class="bag-box">
       <div class="bag-top"><h2>行囊</h2><span>心得 ${L.xinde ?? 0} · 功法位 ${L.skills.length}/${slotCount(L)}</span><button class="btn sm" data-auto>自动配装</button><button class="btn sm primary" data-close>收起</button></div>
-      <h3>功法</h3>${gongRows || '<p class="muted">还没有功法。入道后择本命。</p>'}${chain}
+      ${L.inDao ? '' : '<p class="muted">你还是凡人。仙缘到来、入道时会择一门本命功法并得一件凡器；之后在这里换法宝、挂附诀、带被动与主动法宝。</p>'}
+      <h3>功法</h3>${gongRows || '<p class="muted">还没有功法。</p>'}${chain}
       <h3>被动法宝 · ${ld.passive.length}/${PASSIVE_MAX}</h3>${passives.map((t) => item(t, ld.passive.includes(t.uid), 'passive')).join('') || '<p class="muted">无</p>'}
       <h3>主动法宝 · ${ld.active.length}/${ACTIVE_MAX}</h3><p class="muted">战斗中按 1/2/3（触屏点右下圆钮）。消耗型次数跨战斗保留，充能型每场满格，拾灵气球回充。</p>${actives.map((t) => item(t, ld.active.includes(t.uid), 'active')).join('') || '<p class="muted">无</p>'}
       ${L.fjBag!.length ? `<h3>未挂附诀</h3><div class="chips">${L.fjBag!.map((f) => `<span class="chip" title="${esc(FUJUE[f].desc)}">${FUJUE[f].name}</span>`).join('')}</div>` : ''}
