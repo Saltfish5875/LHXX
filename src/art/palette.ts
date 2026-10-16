@@ -1,8 +1,8 @@
-// 「青冥画卷」配色：世界是一幅画在宣纸上的青绿山水，墨潮是画里唯一的纯黑。
+// 「青冥画卷」配色：云海之上的青绿仙山，天青白底、白金仙宫、御剑青光；墨潮是画里唯一的纯黑。
 
 export const C = {
-  paper: '#e4eaed', // 宣纸
-  paperDeep: '#d3d9dc',
+  paper: '#eef5f8', // 天青白纸
+  paperDeep: '#dbe7ec',
   ink: '#1c232c', // 焦墨
   inkSoft: '#46535f', // 淡墨
   stoneBlue: '#2e6e8e', // 石青
@@ -13,11 +13,14 @@ export const C = {
   gold: '#b8923a', // 泥金
   jade: '#7fb3bb',
   mist: 'rgba(239,245,248,0.85)',
+  line: '#2b5d66', // 仙山与建筑的勾线：深青，不用焦墨
+  cloudShade: '#cfe2ee',
+  swordLight: '#7fe0ff', // 御剑青光
 };
 
 export interface EraLook {
   sky: [string, string];
-  hills: [string, string]; // 峰顶、山脚
+  hills: [string, string]; // 受光面、背光面
   far: string;
   accent: string;
   night?: boolean;
@@ -30,18 +33,19 @@ export interface EraLook {
 }
 
 // 一人千面的七个年代：同一套山水，换天色和点景
+// hills = [受光面, 背光面]：石柱峰左亮右暗
 export const ERA_LOOK: Record<string, EraLook> = {
-  E1: { sky: ['#d9e8f0', '#eef4f6'], hills: ['#28668a', '#4b92a3'], far: '#a2bfcd', accent: C.stoneBlue },
-  E2: { sky: ['#c6ced4', '#e4e8ea'], hills: ['#46596a', '#6c8090'], far: '#a9b4bd', accent: C.cinnabar, smoke: true },
-  E3: { sky: ['#d2e8f0', '#eef4f6'], hills: ['#20627f', '#3c90a6'], far: '#9cc3d1', accent: '#2f8aa0', sea: true },
-  E4: { sky: ['#d3e5f3', '#eef3f7'], hills: ['#1d5285', '#3784aa'], far: '#96b6d3', accent: C.stoneBlue, swordLight: true },
-  E5: { sky: ['#d6dce2', '#ecf0f1'], hills: ['#33475d', '#5d6a7e'], far: '#b1bbc6', accent: C.cinnabar, redLeaves: true },
-  E6: { sky: ['#c1c7cc', '#dde2e5'], hills: ['#212d39', '#3b4f5f'], far: '#9ca7b0', accent: C.ink, inkDrip: true },
-  E7: { sky: ['#1b2840', '#44567a'], hills: ['#1a3149', '#285468'], far: '#566a86', accent: C.gold, night: true, gateFar: true },
+  E1: { sky: ['#a9d4ee', '#f3f9fc'], hills: ['#a8dccf', '#2f8088'], far: '#b9d8e4', accent: C.stoneBlue },
+  E2: { sky: ['#c3d0d8', '#eef2f2'], hills: ['#b3cbc4', '#46707a'], far: '#c4d0d6', accent: C.cinnabar, smoke: true },
+  E3: { sky: ['#9fd0ee', '#f2f9fc'], hills: ['#a3dad6', '#25788e'], far: '#b2d6e6', accent: '#2f8aa0', sea: true },
+  E4: { sky: ['#9ccdf0', '#f4faff'], hills: ['#b0e2d6', '#2a7c8c'], far: '#b4d4ea', accent: C.stoneBlue, swordLight: true },
+  E5: { sky: ['#c8cfdc', '#f1f0f0'], hills: ['#b9cfc6', '#4a6670'], far: '#c9d0da', accent: C.cinnabar, redLeaves: true },
+  E6: { sky: ['#b7c0c8', '#e6eaec'], hills: ['#a3b8b6', '#33505a'], far: '#b5bfc6', accent: C.ink, inkDrip: true },
+  E7: { sky: ['#1b2840', '#44567a'], hills: ['#5f97a0', '#1a3a4c'], far: '#566a86', accent: C.gold, night: true, gateFar: true },
 };
 
-// 境界：越往上，蓝青越浓、泥金越多
-export const REALM_SAT = [0.5, 0.65, 0.78, 0.9, 1, 1];
+// 境界：越往上，青绿越浓、泥金越多
+export const REALM_SAT = [0.65, 0.75, 0.85, 0.92, 1, 1];
 
 export function mix(a: string, b: string, t: number): string {
   const pa = hex(a);

@@ -11,15 +11,15 @@
 }
 
 :root {
-  --paper: #e4eaed;
-  --paper-2: #ecf2f5;
-  --paper-3: #f0f6f9;
+  --paper: #eef5f8;
+  --paper-2: #f5f9fb;
+  --paper-3: #fafcfd;
   --ink: #1c232c;
   --ink-2: #4c5a68;
   --blue: #2e6e8e; /* 石青 */
   --pale: #a9c3c8;
   --teal: #2e6e8e;
-  --jade: #f0f6f9;
+  --jade: #fafcfd;
   --line: rgba(43, 55, 69, 0.2);
   --red: #b8382e; /* 朱砂 */
   --gold: #b8923a; /* 泥金 */
@@ -29,7 +29,7 @@
   --serif: 'wenkai', 'LXGW WenKai', 'Kaiti SC', 'STKaiti', 'KaiTi', 'Songti SC', serif;
   --sans: 'wenkai', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --brush: 'brush', 'Kaiti SC', 'STKaiti', 'KaiTi', serif;
-  --paper-tex: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.2 0 0 0 0 0.3 0 0 0 0 0.4 0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
+  --paper-tex: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.2 0 0 0 0 0.3 0 0 0 0 0.4 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 html,
@@ -40,14 +40,14 @@ body {
 body {
   background:
     var(--paper-tex),
-    radial-gradient(ellipse at 85% -10%, rgba(169, 195, 200, 0.45), transparent 55%),
+    radial-gradient(ellipse at 85% -10%, rgba(150, 205, 235, 0.5), transparent 60%),
     radial-gradient(ellipse at 0% 110%, rgba(79, 154, 131, 0.16), transparent 50%),
     var(--paper);
 }
 
 /* 顶栏 */
 .topbar {
-  background: rgba(236, 242, 245, 0.82);
+  background: rgba(246, 250, 252, 0.82);
   border-bottom: 1px solid var(--line);
 }
 .brand {
@@ -80,7 +80,7 @@ body {
 .btn.primary {
   background: var(--blue);
   border-color: #1f5672;
-  color: #f0f6f9;
+  color: #fafcfd;
 }
 .btn.primary:hover:not(:disabled) {
   background: #245a75;
@@ -132,7 +132,7 @@ body {
 
 /* 卷轴正文 */
 .scroll-wrap {
-  background: rgba(236, 242, 245, 0.78);
+  background: rgba(246, 250, 252, 0.78);
   border-color: rgba(28, 35, 44, 0.18);
   border-radius: 4px;
 }
@@ -219,7 +219,7 @@ body {
 
 /* 流年签与去向卡 */
 .deal {
-  background: linear-gradient(180deg, rgba(228, 234, 237, 0.85), rgba(236, 242, 245, 0.98));
+  background: linear-gradient(180deg, rgba(238, 245, 248, 0.85), rgba(246, 250, 252, 0.98));
   border-top: 1px solid rgba(28, 35, 44, 0.25);
 }
 .sign {
@@ -250,11 +250,11 @@ body {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0)),
     var(--paper-tex),
-    #eff5f8;
+    #f8fbfc;
   border: 1px solid rgba(28, 35, 44, 0.3);
   border-radius: 4px;
   box-shadow:
-    inset 0 0 0 3px #eff5f8,
+    inset 0 0 0 3px #f8fbfc,
     inset 0 0 0 4px rgba(28, 35, 44, 0.16),
     0 4px 12px rgba(40, 50, 63, 0.12);
   animation: cardIn 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
@@ -263,7 +263,7 @@ body {
 }
 .card:hover {
   box-shadow:
-    inset 0 0 0 3px #eff5f8,
+    inset 0 0 0 3px #f8fbfc,
     inset 0 0 0 4px rgba(28, 35, 44, 0.3),
     0 10px 22px rgba(40, 50, 63, 0.2);
 }
@@ -316,7 +316,7 @@ body {
   background:
     linear-gradient(0deg, rgba(28, 35, 44, 0.16), rgba(28, 35, 44, 0) 40%),
     var(--paper-tex),
-    #eff5f8;
+    #f8fbfc;
 }
 .tag-jie .c-tag {
   background: var(--red);
@@ -329,7 +329,7 @@ body {
   background:
     linear-gradient(0deg, rgba(28, 35, 44, 0.28), rgba(28, 35, 44, 0) 55%),
     var(--paper-tex),
-    #e5ebee;
+    #eef4f7;
 }
 .tag-xiong .c-tag {
   background: var(--ink);
@@ -343,7 +343,7 @@ body {
   background:
     linear-gradient(180deg, rgba(243, 217, 138, 0.25), rgba(243, 217, 138, 0)),
     var(--paper-tex),
-    #ecf2f5;
+    #f5f9fb;
 }
 .tag-yin .c-tag {
   background: var(--gold);
@@ -369,7 +369,7 @@ body {
 
 /* 角色面板 */
 .panel {
-  background: rgba(236, 242, 245, 0.9);
+  background: rgba(246, 250, 252, 0.9);
   border-color: rgba(28, 35, 44, 0.18);
   border-radius: 4px;
   font-family: var(--serif);
@@ -434,11 +434,11 @@ body {
   position: relative;
   background:
     var(--paper-tex),
-    linear-gradient(180deg, #f0f6f9, #e5ebee);
+    linear-gradient(180deg, #fafcfd, #eef4f7);
   border: 1px solid rgba(28, 35, 44, 0.25);
   border-radius: 3px;
   box-shadow:
-    inset 0 0 0 6px #eaf0f3,
+    inset 0 0 0 6px #f3f8fa,
     inset 0 0 0 7px rgba(28, 35, 44, 0.12),
     0 24px 60px rgba(28, 35, 44, 0.35);
 }
@@ -597,7 +597,7 @@ body {
 }
 .style-battle .modal-box {
   box-shadow:
-    inset 0 0 0 6px #eaf0f3,
+    inset 0 0 0 6px #f3f8fa,
     inset 0 0 0 7px rgba(184, 56, 46, 0.45),
     0 24px 60px rgba(0, 1, 10, 0.5);
 }
@@ -765,7 +765,7 @@ body {
 
 /* 各时刻的底色 */
 .m-birth {
-  background: var(--paper-tex), #e4eaed;
+  background: var(--paper-tex), #eef5f8;
   color: var(--ink);
   animation: unroll 0.9s cubic-bezier(0.6, 0, 0.2, 1) both;
 }
@@ -800,12 +800,12 @@ body {
   right: 0;
 }
 .m-root {
-  background: radial-gradient(circle at 50% 46%, rgba(159, 214, 230, 0.55), rgba(228, 234, 237, 0.96) 55%), var(--paper);
+  background: radial-gradient(circle at 50% 46%, rgba(159, 214, 230, 0.55), rgba(238, 245, 248, 0.96) 55%), var(--paper);
   color: var(--ink);
 }
 .m-dao,
 .m-realm {
-  background: rgba(228, 234, 237, 0.94);
+  background: rgba(238, 245, 248, 0.94);
   color: #ebf1f4;
 }
 .m-dao .m-blot circle {
@@ -886,7 +886,7 @@ body {
 .hud-top,
 .hud-bottom,
 .hud-msg {
-  background: rgba(236, 242, 245, 0.9);
+  background: rgba(246, 250, 252, 0.9);
   border: 1px solid rgba(28, 35, 44, 0.22);
   border-radius: 3px;
   box-shadow: 0 4px 14px rgba(40, 50, 63, 0.12);
@@ -902,7 +902,7 @@ body {
   font-size: 18px;
 }
 .level-up {
-  background: var(--paper-tex), #eaf0f3;
+  background: var(--paper-tex), #f3f8fa;
   border: 1px solid rgba(184, 146, 58, 0.6);
   border-radius: 3px;
 }
@@ -936,7 +936,7 @@ body {
 .hud-msg.big {
   font-size: 64px;
   color: var(--ink);
-  text-shadow: 0 0 18px rgba(236, 242, 245, 0.9);
+  text-shadow: 0 0 18px rgba(246, 250, 252, 0.9);
 }
 .lv-title {
   font-family: var(--brush);
@@ -959,7 +959,7 @@ body {
     height: clamp(150px, 26dvh, 230px);
   }
   .mstatus {
-    background: rgba(236, 242, 245, 0.95);
+    background: rgba(246, 250, 252, 0.95);
   }
   .ms-seal {
     font-size: 16px;

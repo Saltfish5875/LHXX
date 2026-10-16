@@ -1,8 +1,9 @@
-// 劫难战斗画面：淡蓝水墨战场（Canvas2D），键盘 WASD / 方向键，触屏拖动
+// 劫难战斗画面：云海浮峰的仙境战场（Canvas2D），键盘 WASD / 方向键，触屏拖动
 import { BattleSim, ARENA } from './sim';
 import type { BattleSpec, BattleResult } from './spec';
 import { ERA_LOOK, mix, rgba } from '../art/palette';
 import { sfx } from '../art/sound';
+import { pillarPeak, cloudBank, rng } from '../art/scene';
 
 const INK = '#1d2a38';
 const BLUE_INK = '#3A6080';
@@ -15,7 +16,7 @@ function makePaper(ctx: CanvasRenderingContext2D) {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const g = c.getContext('2d')!;
-  g.fillStyle = '#e1eaef';
+  g.fillStyle = '#eef6fa';
   g.fillRect(0, 0, 256, 256);
   for (let i = 0; i < 30; i++) {
     g.fillStyle = `rgba(86,109,138,${Math.random() * 0.018})`;
@@ -24,7 +25,7 @@ function makePaper(ctx: CanvasRenderingContext2D) {
     g.fill();
   }
   for (let i = 0; i < 900; i++) {
-    g.strokeStyle = `rgba(61,76,97,${Math.random() * 0.07})`;
+    g.strokeStyle = `rgba(61,96,116,${Math.random() * 0.035})`;
     g.lineWidth = Math.random() * 1.2;
     const x = Math.random() * 256;
     const y = Math.random() * 256;
@@ -39,56 +40,74 @@ function makePaper(ctx: CanvasRenderingContext2D) {
   return paperPattern;
 }
 
-// 远山：蓝青水墨山水，年代定色，境界越高越浓
-const REALM_SAT = [0.4, 0.45, 0.6, 0.75, 0.9, 1];
+// 远景：云海里的石柱仙峰，年代定色，境界越高越浓。两条横幅预先画好，按视差平移、首尾相接
+const REALM_SAT = [0.7, 0.75, 0.85, 0.92, 1, 1];
 let look = ERA_LOOK.E1;
+let strips: { key: string; far: HTMLCanvasElement; mid: HTMLCanvasElement; H: number } | null = null;
+
+function buildStrip(W: number, H: number, mid: boolean, sat: number, seed: number) {
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d')!;
+  const r = rng(seed);
+  const desat = (col: string, k = 1) => mix(col, '#b4c0c8', (1 - sat) * k);
+  const lit = mid ? desat(look.hills[0]) : mix(desat(look.hills[0]), look.sky[1], 0.5);
+  const dark = mid ? desat(look.hills[1], 0.8) : mix(desat(look.hills[1]), look.sky[1], 0.58);
+  const n = mid ? 6 : 11;
+  const sc = H / 260;
+  // 两端各留一截空隙，平铺时接缝落在云里
+  for (let i = 0; i < n; i++) {
+    const x = W * (0.04 + (i + r() * 0.6) / n * 0.92);
+    const wd = (mid ? 70 + r() * 50 : 30 + r() * 30) * sc;
+    const top = H * (mid ? 0.08 + r() * 0.3 : 0.3 + r() * 0.25);
+    if (mid && r() < 0.6) pillarPeak(g, x + (r() < 0.5 ? -1 : 1) * wd * 0.55, H * 0.98, top + (H - top) * 0.35, wd * 0.6, mix(lit, look.sky[1], 0.2), mix(dark, look.sky[1], 0.2), 0.6, r, { pines: true });
+    pillarPeak(g, x, H * (mid ? 0.98 : 0.86), top, wd, lit, dark, mid ? 0.75 : 0.3, r, { pines: true, fall: mid && r() < 0.6 });
+  }
+  cloudBank(g, W, H * (mid ? 0.93 : 0.8), H * 0.08, sc, r, !!look.night);
+  return c;
+}
 
 function drawMountains(ctx: CanvasRenderingContext2D, w: number, h: number, camX: number, camY: number, realm: number, kind: string) {
   const sat = REALM_SAT[realm] ?? 0.6;
   const sky = ctx.createLinearGradient(0, 0, 0, h * 0.55);
-  sky.addColorStop(0, rgba(look.sky[0], 0.85));
+  sky.addColorStop(0, rgba(look.sky[0], 0.95));
   sky.addColorStop(1, rgba(look.sky[1], 0));
   ctx.fillStyle = sky;
   ctx.fillRect(0, 0, w, h * 0.55);
+  const H = Math.round(Math.min(380, h * 0.36));
+  const W = Math.max(1600, Math.round(w * 1.6));
+  const key = `${look.sky[0]}|${realm}|${W}|${H}`;
+  if (!strips || strips.key !== key) {
+    const seed = realm * 977 + W + H;
+    strips = { key, H, far: buildStrip(W, H, false, sat, seed), mid: buildStrip(W, H, true, sat, seed + 1) };
+  }
   const layers = [
-    { par: 0.05, top: look.far, a: 0.8, amp: Math.min(140, h * 0.16), base: Math.min(0.36, 300 / h), f: 0.0035 },
-    { par: 0.1, top: mix(look.hills[0], '#9cabb6', (1 - sat) * 0.7), a: 0.85, amp: Math.min(180, h * 0.2), base: Math.min(0.5, 420 / h), f: 0.0052 },
+    { img: strips.far, par: 0.05, bottom: Math.min(0.3, 260 / h) },
+    { img: strips.mid, par: 0.1, bottom: Math.min(0.42, 360 / h) },
   ];
   for (const L of layers) {
-    const off = -camX * L.par;
-    const by = h * L.base - camY * L.par * 0.3;
-    const lg = ctx.createLinearGradient(0, by - L.amp, 0, by + 140);
-    lg.addColorStop(0, rgba(L.top, L.a));
-    lg.addColorStop(1, rgba(mix(look.hills[1], '#c8ced1', 1 - sat), 0));
-    ctx.fillStyle = lg;
-    ctx.beginPath();
-    ctx.moveTo(0, by + 140);
-    const pts: [number, number][] = [];
-    for (let x = 0; x <= w + 30; x += 30) {
-      const wx = x - off;
-      const y = by - Math.pow(Math.abs(Math.sin(wx * L.f) * 0.75 + Math.sin(wx * L.f * 2.7 + 1) * 0.35), 1.4) * L.amp;
-      pts.push([x, y]);
-      ctx.lineTo(x, y);
-    }
-    ctx.lineTo(w + 30, by + 140);
-    ctx.closePath();
-    ctx.fill();
-    // 峰顶积墨
-    const wash = ctx.createLinearGradient(0, by - L.amp, 0, by + 20);
-    wash.addColorStop(0, 'rgba(28,35,44,0.22)');
-    wash.addColorStop(1, 'rgba(28,35,44,0)');
-    ctx.fillStyle = wash;
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(28,35,44,0.22)';
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-    ctx.stroke();
+    const y = h * L.bottom - camY * L.par * 0.3 - H;
+    let x = -(((camX * L.par) % W) + W) % W;
+    for (; x < w; x += W) ctx.drawImage(L.img, Math.round(x), Math.round(y));
+    // 峰脚以下接一片云海
+    const cy = y + H - 2;
+    const cg = ctx.createLinearGradient(0, cy, 0, cy + 120);
+    cg.addColorStop(0, 'rgba(255,255,255,0.7)');
+    cg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = cg;
+    ctx.fillRect(0, cy, w, 120);
   }
-  // 地面淡淡一层青灰
+  // 天光
+  const hg = ctx.createRadialGradient(w * 0.75, 0, 4, w * 0.75, 0, h * 0.6);
+  hg.addColorStop(0, look.night ? 'rgba(240,246,250,0.15)' : 'rgba(255,252,236,0.6)');
+  hg.addColorStop(1, 'rgba(255,252,236,0)');
+  ctx.fillStyle = hg;
+  ctx.fillRect(0, 0, w, h * 0.6);
+  // 地面淡淡一层青
   const gr = ctx.createLinearGradient(0, h * 0.45, 0, h);
-  gr.addColorStop(0, rgba(look.hills[1], 0));
-  gr.addColorStop(1, rgba(mix(look.hills[1], '#b5bbbe', 1 - sat), kind === 'trial' ? 0.12 : 0.22));
+  gr.addColorStop(0, rgba(look.hills[0], 0));
+  gr.addColorStop(1, rgba(mix(look.hills[0], '#d6ece6', 1 - sat), kind === 'trial' ? 0.12 : 0.2));
   ctx.fillStyle = gr;
   ctx.fillRect(0, h * 0.45, w, h * 0.55);
 }
@@ -108,17 +127,34 @@ function drawGround(ctx: CanvasRenderingContext2D, camX: number, camY: number, v
       const x = gx * cell + rnd() * cell;
       const y = gy * cell + rnd() * cell;
       const k = rnd();
-      ctx.strokeStyle = `rgba(28,35,44,${0.18 + rnd() * 0.15})`;
+      if (k > 0.55) {
+        // 脚下飘着的小团云
+        const rr = 10 + rnd() * 14;
+        ctx.fillStyle = 'rgba(207,226,238,0.55)';
+        for (let i = 0; i < 3; i++) {
+          ctx.beginPath();
+          ctx.arc(x + (i - 1) * rr * 0.8, y + 3, rr * (i === 1 ? 0.8 : 0.6), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        for (let i = 0; i < 3; i++) {
+          ctx.beginPath();
+          ctx.arc(x + (i - 1) * rr * 0.8, y, rr * (i === 1 ? 0.75 : 0.55), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        continue;
+      }
+      ctx.strokeStyle = `rgba(43,93,102,${0.2 + rnd() * 0.15})`;
       ctx.lineWidth = 1.2;
       ctx.beginPath();
-      if (k < 0.7) {
+      if (k < 0.4) {
         for (let i = -1; i <= 1; i++) {
           ctx.moveTo(x + i * 3, y);
           ctx.quadraticCurveTo(x + i * 4, y - 6, x + i * 6, y - 9 - rnd() * 4);
         }
         ctx.stroke();
       } else {
-        ctx.fillStyle = rgba(look.hills[0], 0.18);
+        ctx.fillStyle = rgba(look.hills[0], 0.3);
         ctx.ellipse(x, y, 10 + rnd() * 8, 5 + rnd() * 3, 0, Math.PI, 0);
         ctx.fill();
         ctx.stroke();
@@ -221,18 +257,22 @@ function drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number, t: numb
   ctx.save();
   ctx.translate(x, y);
   const aura = ctx.createRadialGradient(0, 0, 4, 0, 0, 34);
-  aura.addColorStop(0, 'rgba(159,214,230,0.35)');
+  aura.addColorStop(0, 'rgba(159,224,240,0.45)');
   aura.addColorStop(1, 'rgba(159,214,230,0)');
   ctx.fillStyle = aura;
   ctx.beginPath();
   ctx.arc(0, 0, 34, 0, Math.PI * 2);
   ctx.fill();
-  // 剑
-  ctx.strokeStyle = '#7fb6c9';
-  ctx.lineWidth = 3;
+  // 脚下飞剑：发光的青白剑身
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(127,224,255,0.45)';
+  ctx.lineWidth = 8;
   ctx.beginPath();
-  ctx.moveTo(-18, 16);
-  ctx.lineTo(18, 16);
+  ctx.moveTo(-22, 16);
+  ctx.lineTo(22, 15);
+  ctx.stroke();
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2.5;
   ctx.stroke();
   // 白衣
   ctx.fillStyle = hurt ? '#ffd9d9' : '#fbfdff';
@@ -250,32 +290,48 @@ function drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number, t: numb
   ctx.arc(0, -12, 6.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
-  // 飘带
-  ctx.strokeStyle = 'rgba(58,167,201,0.7)';
+  // 黑发与飘带
+  ctx.fillStyle = '#1f2a33';
   ctx.beginPath();
-  ctx.moveTo(-6, -4);
-  ctx.quadraticCurveTo(-22, 0 + Math.sin(t * 3) * 6, -30, 8);
-  ctx.stroke();
+  ctx.arc(0, -15, 4.5, Math.PI, 0);
+  ctx.quadraticCurveTo(-8, -6, -16 + Math.sin(t * 4) * 2, -2);
+  ctx.quadraticCurveTo(-8, -10, -4.5, -15);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(127,208,230,0.75)';
+  ctx.lineWidth = 1.6;
+  for (const off of [0, 6]) {
+    ctx.beginPath();
+    ctx.moveTo(-6, -4 + off * 0.3);
+    ctx.bezierCurveTo(-18, -2 + off + Math.sin(t * 3 + off) * 5, -28, 4 + off, -40, off + Math.sin(t * 2.4 + off) * 6);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
 function shotStroke(ctx: CanvasRenderingContext2D, x: number, y: number, vx: number, vy: number, color: string, r: number) {
+  // 剑光：一道拖得很长、往尾巴淡去的青光，头上一点白
   const l = Math.hypot(vx, vy) || 1;
-  const tx = (vx / l) * r * 2.4;
-  const ty = (vy / l) * r * 2.4;
+  const ux = vx / l;
+  const uy = vy / l;
+  const tail = r * 7;
+  const hx = x + ux * r * 0.8;
+  const hy = y + uy * r * 0.8;
+  const g = ctx.createLinearGradient(x - ux * tail, y - uy * tail, hx, hy);
+  g.addColorStop(0, rgba(color, 0));
+  g.addColorStop(0.75, rgba(color, 0.55));
+  g.addColorStop(1, rgba(color, 0.9));
   ctx.lineCap = 'round';
-  ctx.strokeStyle = color;
-  ctx.globalAlpha = 0.45;
-  ctx.lineWidth = r * 1.4;
+  ctx.strokeStyle = g;
+  ctx.lineWidth = r * 1.6;
   ctx.beginPath();
-  ctx.moveTo(x - tx, y - ty);
-  ctx.lineTo(x + tx * 0.3, y + ty * 0.3);
+  ctx.moveTo(x - ux * tail, y - uy * tail);
+  ctx.lineTo(hx, hy);
   ctx.stroke();
-  ctx.globalAlpha = 1;
-  ctx.lineWidth = r * 0.8;
-  ctx.stroke();
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = r * 0.3;
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.lineWidth = r * 0.45;
+  ctx.beginPath();
+  ctx.moveTo(x - ux * r * 2.5, y - uy * r * 2.5);
+  ctx.lineTo(hx, hy);
   ctx.stroke();
 }
 
@@ -501,12 +557,12 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
   const camX = sim.px + (fx.shake > 0 ? (Math.random() - 0.5) * fx.shake * 28 : 0);
   const camY = sim.py + (fx.shake > 0 ? (Math.random() - 0.5) * fx.shake * 28 : 0);
   const zoom = Math.min(1, Math.max(0.62, Math.min(w, h) / 760));
-  ctx.fillStyle = makePaper(ctx) ?? '#e1eaef';
+  ctx.fillStyle = makePaper(ctx) ?? '#eef6fa';
   ctx.fillRect(0, 0, w, h);
   drawMountains(ctx, w, h, camX, camY, sim.spec.realm, sim.spec.kind);
   if (sim.spec.kind === 'trial') {
     const g = ctx.createLinearGradient(0, 0, 0, h * 0.5);
-    g.addColorStop(0, 'rgba(70,70,95,0.35)');
+    g.addColorStop(0, 'rgba(70,70,95,0.16)');
     g.addColorStop(1, 'rgba(70,70,95,0)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h * 0.5);
@@ -650,7 +706,7 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
       const a = t * 3 + (i / n) * Math.PI * 2;
       const ox = sim.px + Math.cos(a) * 78;
       const oy = sim.py + Math.sin(a) * 78;
-      shotStroke(ctx, ox, oy, -Math.sin(a), Math.cos(a), '#3aa7c9', 6);
+      shotStroke(ctx, ox, oy, -Math.sin(a), Math.cos(a), '#4fd2f5', 6);
     }
   }
   drawPlayer(ctx, sim.px, sim.py, t, sim.iframes > 0.3);
