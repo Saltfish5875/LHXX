@@ -6,11 +6,32 @@ export type Tendency = 'safe' | 'chance' | 'war';
 export type CardTag = '劫' | '缘' | '凶' | '平' | '引' | '故';
 export type AcqRelation = 'favor' | 'grudge' | 'vow';
 
-// 战斗中可升阶的法宝 / 道法（跨战斗保留，一世有效）
+// 功法：品阶（黄玄地天）+ 层数（一层～圆满），须配同器类的法宝才能施展
 export type SkillId = 'sword' | 'orbit' | 'thunder' | 'fire' | 'frost' | 'ink' | 'art';
 export interface Skill {
   id: SkillId;
   lvl: number;
+  grade?: number; // 0 黄 1 玄 2 地 3 天
+  bm?: boolean; // 本命功法
+  up?: boolean; // 本世已升过品
+}
+// 法宝：功法型（按器类）/ 被动型 / 主动型
+export interface Treasure {
+  uid: number;
+  kind: 'gong' | 'passive' | 'active';
+  key: string; // 功法型：SkillId；其他：ITEMS 的 id
+  grade: number; // 0 凡 1 法 2 灵 3 宝 4 仙
+  name: string;
+  fj?: string[]; // 附诀
+  uses?: number; // 消耗型剩余次数；护身符剩余次数
+  spirit?: string; // 器灵（灵器以上）
+  bound?: boolean; // 认主（本命法宝）
+}
+export interface Loadout {
+  gong: Partial<Record<SkillId, number>>; // 功法 → 法宝 uid
+  passive: number[];
+  active: number[];
+  chain?: SkillId | null; // 引雷引动的功法
 }
 
 export interface Effect {
@@ -37,6 +58,10 @@ export interface Effect {
   banLoc?: { loc: string; years: number };
   reroll?: number;
   skill?: SkillId;
+  fujue?: string | boolean; // 得一枚附诀（true = 随机）
+  item?: string; // 得一件被动 / 主动法宝
+  canye?: boolean; // 功法残页：一门功法升一品
+  xinde?: number; // 心得
   battle?: { kind: BattleKind; title: string; elites?: number; boss?: string; reward?: number; win?: Effect; lose?: Effect; cultOnly?: boolean };
   die?: string;
   text?: string;
@@ -211,6 +236,32 @@ export interface LifeState {
   ruinVisits?: Record<string, number>; // 每处遗迹本世进入次数
   ruinVault?: string[]; // 本世已拿过专属遗物的遗迹
   ruinCleared?: string[]; // 本世通关过秘库的遗迹（可重振）
+  // 修炼与法宝
+  bag?: Treasure[];
+  fjBag?: string[]; // 未挂上的附诀
+  load?: Loadout;
+  xinde?: number;
+  identity?: string; // 轮回身份 S01…
+  tier?: number;
+  uid?: number;
+  chainGot?: boolean; // 本世已得连锁附诀
+  marketSpent?: number;
+  maxStones?: number;
+  saves?: number; // 本世被救回的致命伤次数
+}
+
+export interface BookEntry {
+  grade: number; // 前世最高品阶
+  best: number; // 前世最高层数
+  reach: number[]; // reach[n] = 练到第 n 层的世数
+  fj: string[]; // 上一世挂在这门功法法宝上的附诀
+  grades: number[]; // 收录过的品阶
+}
+export interface CultMeta {
+  book: Partial<Record<SkillId, BookEntry>>;
+  mortalStreak: number;
+  saves: number;
+  newAch: string[];
 }
 
 // ================= 命途棋盘 =================
@@ -309,5 +360,6 @@ export interface MetaState {
   recentChoices?: string[][]; // 最近两世见过的抉择（跨世冷却）
   fates?: string[]; // 见过的命格
   legacies?: Legacy[]; // 前世产业留下的遗迹
+  cult?: CultMeta;
   settings: { tendency: Tendency; speed: number; autoRoll?: boolean };
 }

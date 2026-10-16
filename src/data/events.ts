@@ -127,7 +127,7 @@ export const CHOICES: LifeEvent[] = [
     { label: '继续闭关', desc: '修为 +10%', eff: { xpPct: 10 } },
   ] }),
   ev({ id: 'C-洞府-2', locs: ['cave'], kind: 'choice', text: '洞府石壁上浮现前人剑痕。', options: [
-    { label: '参悟', desc: '额外流逝一回合，飞剑升一阶', eff: { age: 1, skill: 'sword', school: { sword: 10 } } },
+    { label: '参悟', desc: '额外流逝一回合，剑法 +1 层', eff: { age: 1, skill: 'sword', school: { sword: 10 } } },
     { label: '抹去', eff: {} },
   ] }),
   ev({ id: 'C-静室-1', locs: ['quiet'], kind: 'choice', text: '暗伤里长出一丝墨。', options: [
@@ -235,8 +235,8 @@ export const FLAVORS: LifeEvent[] = [
   ev({ id: 'f-bazaar1', locs: ['bazaar'], kind: 'flavor', text: '在坊市听人说起天门的旧闻。', repeat: true }),
   ev({ id: 'f-cross1', locs: ['cross'], kind: 'flavor', text: '在人生路口站了很久，最后还是回了洞府。', eff: { xpPct: 2 }, repeat: true }),
   ev({ id: 'f-pact', locs: ['cross', 'fortune'], kind: 'choice', text: '一卷古契在你面前展开：借寿燃法，以命换威。', options: [
-    { label: '签下', desc: '寿元 -20，道法威力大增', eff: { life: -20, trace: 'life_borrowed', skill: 'art' } },
-    { label: '以血为引', desc: '气血上限 -15，飞剑升一阶', eff: { hpMax: -15, trace: 'blood_pact', skill: 'sword' } },
+    { label: '签下', desc: '寿元 -20，得自创道法', eff: { life: -20, trace: 'life_borrowed', skill: 'art' } },
+    { label: '以血为引', desc: '气血上限 -15，剑法 +1 层', eff: { hpMax: -15, trace: 'blood_pact', skill: 'sword' } },
     { label: '合上', eff: {} },
   ] }),
   ev({ id: 'f-forest1', locs: ['forest'], kind: 'flavor', text: '妖林里只见妖踪，未见妖物。拾得几株灵草。', eff: { xpPct: 2, stones: 6 }, repeat: true }),
@@ -253,12 +253,18 @@ export const ENCOUNTERS: LifeEvent[] = [
   ] }),
   ev({ id: 'q-herb', locs: ['fortune', 'roam'], kind: 'flavor', text: '悬崖上一株百年灵芝，你小心采下。', eff: { life: 8, xpPct: 4 }, repeat: true }),
   ev({ id: 'q-tomb', locs: ['fortune'], kind: 'choice', text: '一座古修士的坐化洞府。', options: [
-    { label: '叩拜后取宝', desc: '得一件法宝或升阶', eff: { skill: 'orbit', merit: 5 } },
+    { label: '叩拜后取宝', desc: '得一门功法（已会则 +1 层）', eff: { skill: 'orbit', merit: 5 } },
     { label: '直接搜刮', desc: '灵石 +80，结仇', eff: { stones: 80, grudge: true } },
   ] }),
-  ev({ id: 'q-thunderwood', locs: ['fortune', 'roam'], kind: 'flavor', text: '雷击木上残留着天雷之力，你炼成一枚雷符。', eff: { skill: 'thunder' } }),
-  ev({ id: 'q-firefeather', locs: ['fortune', 'roam'], kind: 'flavor', text: '火山口落下一枚离火金乌翎。', eff: { skill: 'fire', school: { alchemy: 5 } } }),
-  ev({ id: 'q-ice', locs: ['fortune', 'roam'], kind: 'flavor', text: '太虚雪原深处，你得了一块万年玄冰。', eff: { skill: 'frost', trace: 'snowfield' } }),
+  ev({ id: 'q-thunderwood', locs: ['fortune', 'roam'], kind: 'flavor', text: '雷击木上残留着天雷之力，你从焦纹里读出《掌心雷》的法门。', eff: { skill: 'thunder' } }),
+  ev({ id: 'q-firefeather', locs: ['fortune', 'roam'], kind: 'flavor', text: '火山口落下一枚赤羽，羽上烙着《离火诀》。', eff: { skill: 'fire', school: { alchemy: 5 } } }),
+  ev({ id: 'q-ice', locs: ['fortune', 'roam'], kind: 'flavor', text: '太虚雪原深处，冰壁上刻着半部《玄冰指》。', eff: { skill: 'frost', trace: 'snowfield' } }),
+  // 修炼与法宝：附诀、法宝、残页、心得
+  ev({ id: 'q-fujue', locs: ['fortune', 'roam'], kind: 'flavor', text: '崖壁上刻着半篇口诀，不是功法，是功法的「用法」。你记下了。', eff: { fujue: true }, repeat: true, weight: 0.8 }),
+  ev({ id: 'q-fujue-sect', locs: ['sect'], kind: 'flavor', text: '师兄喝多了，把一枚附诀写在你掌心，第二天他什么也不记得。', eff: { fujue: true }, repeat: true, weight: 0.8 }),
+  ev({ id: 'q-trinket', locs: ['bazaar', 'roam'], kind: 'flavor', text: '散修收摊前，用一件小法宝换了你半壶酒。', eff: { item: '?' }, repeat: true, weight: 0.8 }),
+  ev({ id: 'q-canye', locs: ['fortune', 'realm'], kind: 'flavor', text: '古洞石匣里压着一页残缺的功法，恰好补上你那门功法缺的一角。', eff: { canye: true }, repeat: true, weight: 0.5 }),
+  ev({ id: 'q-xinde', locs: ['quiet', 'cave'], kind: 'flavor', text: '静坐一夜，把这些年打过的仗在心里又过了一遍。', eff: { xinde: 2, xpPct: 2 }, repeat: true }),
   ev({ id: 'q-crow', locs: ['fortune'], kind: 'flavor', text: '一群墨鸦绕着你飞了三圈才散去。', eff: { trace: 'crow_omen' } }),
   ev({ id: 'q-pill', locs: ['fortune', 'bazaar'], kind: 'flavor', text: '路遇丹师赠你一炉筑基丹的药渣，仍有余力。', eff: { xpPct: 6 }, repeat: true }),
   ev({ id: 'q-rift', locs: ['rift'], kind: 'flavor', text: '画外裂隙边，你看见一截断笔浮在空中，伸手却抓不住。', eff: { xpPct: 6, trace: 'rift' }, repeat: true }),

@@ -19,6 +19,9 @@ const LOOKUP: LifeEvent[] = [...ALL_CHOICES, ...ALL_FLAVORS, ...ENCOUNTERS, ...F
 import { chance, pick, rand, randInt, weighted } from './rng';
 import { RollAction, RollView, boardLap, recordLegacies } from './board';
 import { UNLOCKS, WHEEL, hasPage, lampOf, saveLife, saveMeta, wheelPrice } from './meta';
+import { afterBattleCult, applyIdentity, autoEquip, checkAchievements, drawIdentity, ensureCult, giveQi, grantFujue, grantItem, layerCap, layerUp, learnGong, loadoutSpec, metaCult, resolvePending, rotateShop, settleBook, shopItems, startKit, upgradeGrade } from './cult';
+import { estDps } from '../battle/sim';
+import { ACHIEVEMENTS, GONGFA, IDENTITY_BY_ID, ITEMS, LAYER_NAMES, TIER_NAMES } from '../data/cult';
 
 export interface PromptOption {
   label: string;
@@ -47,9 +50,12 @@ export interface IO {
   clearLog(): void;
 }
 
-const SKILL_NAMES: Record<SkillId, string> = { sword: '青锋飞剑', orbit: '环身剑印', thunder: '掌心雷符', fire: '离火金乌翎', frost: '玄冰寒魄', ink: '百鬼幡', art: '自创道法' };
+const SKILL_NAMES: Record<SkillId, string> = Object.fromEntries(Object.values(GONGFA).map((g) => [g.id, g.name])) as Record<SkillId, string>;
 export const skillName = (id: SkillId) => SKILL_NAMES[id];
-const SKILL_SCHOOL: Record<SkillId, School> = { sword: 'sword', orbit: 'body', thunder: 'rune', fire: 'alchemy', frost: 'rune', ink: 'demon', art: 'rune' };
+const SKILL_SCHOOL: Record<SkillId, School> = Object.fromEntries(Object.values(GONGFA).map((g) => [g.id, g.school])) as Record<SkillId, School>;
+
+// 战斗里功法的整体倍率（取代旧的战中升级，见 npm run sim 校准）
+export const BATTLE_POWER = 1.1;
 
 const FATAL_DEATHS = ['溺水早夭', '死于匪患', '死于瘟疫'];
 
@@ -230,13 +236,16 @@ export class Game {
     // 属性 20 点
     const base: Record<AttrKey, number> = { gen: 0, wu: 0, luck: 0, fam: 0 };
     for (const t of L.talents) for (const [k, v] of Object.entries(TALENT_BY_ID[t].attr ?? {})) base[k as AttrKey] += v as number;
-    const origins = ['inkOrphan', 'dragon', 'painter'].filter((o) => M.unlocks.includes(o));
-    const { attrs, origin } = await this.io.allocate(20 + (M.wheel.attr ?? 0), base, origins);
+    const { attrs } = await this.io.allocate(20 + (M.wheel.attr ?? 0), base, []);
     L.attrs = attrs;
     const nb = M.nextBonus ?? {};
     if (nb.fam) L.attrs.fam = Math.min(12, L.attrs.fam + nb.fam);
-    L.origin = origin ?? originOf(L.attrs.fam, this.tflag('orphan'));
-    L.stones = 10 + attrs.fam * 8 + (this.tflag('stones60') ? 60 : 0);
+    // 轮回身份：按档位权重随机（家境与轮回碑加成）
+    const idf = drawIdentity(this);
+    L.origin = idf.origin ?? originOf(L.attrs.fam, this.tflag('orphan'));
+    if (idf.tier === 0 && this.tflag('orphan')) L.origin = '山野孤儿';
+    applyIdentity(this);
+    if (this.tflag('stones60')) L.stones += 60;
     if (L.origin === '墨门遗孤') L.school.demon += 20;
     if (L.origin === '龙族血脉') L.attrs.gen += 3;
     if (L.origin === '画中仙裔') {
@@ -269,7 +278,10 @@ export class Game {
 
     // 传奇开局
     const lg = LEGENDS.filter((l) => l.talents.every((t) => L.talents.includes(t)) && this.legendExtraOk(l.extra));
-    if (lg.length) {
+    if (L.legend) {
+      const l = LEGENDS.find((x) => x.id === L.legend);
+      if (l) await this.io.choose({ title: `传奇出身 · ${l.name}`, text: `${l.text}\n\n${l.effect}`, options: [{ label: '开卷' }], style: 'legend', important: true });
+    } else if (lg.length) {
       const l = lg.sort((a, b) => (b.extra ? 1 : 0) - (a.extra ? 1 : 0))[0];
       L.legend = l.id;
       if (!M.discoveries.includes(l.id)) M.discoveries.push(l.id);
@@ -289,7 +301,8 @@ export class Game {
 
     const talentNames = L.talents.map((t) => TALENT_BY_ID[t].name).join('、');
     this.log(`画卷 · ${ERA_BY_ID[L.era].name}：${ERA_BY_ID[L.era].open}`, 'fate');
-    this.log(`你出生在${L.origin}。天赋：${talentNames}。`, 'milestone');
+    const idd = IDENTITY_BY_ID[L.identity ?? ''];
+    this.log(`你出生在${L.origin}${idd && idd.name !== L.origin ? `，身份「${idd.name}」（${TIER_NAMES[idd.tier]}：${idd.desc}）` : ''}。天赋：${talentNames}。`, 'milestone');
     this.log(`命格「${fate.name}」：${fate.birth}（${fate.short}）`, 'fate');
     if (L.hook) {
       const h = HOOK_BY_ID[L.hook.id];
@@ -369,6 +382,7 @@ export class Game {
       L.turnAt ??= null;
       L.turned ??= 0;
       L.seen ??= {};
+      ensureCult(L);
       this.io.clearLog();
       for (const e of this.L.log) if (e.text) this.io.log(e);
       this.io.refresh();
@@ -413,6 +427,7 @@ export class Game {
       if (L.injuries > 0) g *= 0.5;
       g *= L.xpMul ?? 1;
       if (L.flags.busyLap) g *= 0.7; // 上一圈停得太多，没顾上修行
+      if ((L.bag ?? []).some((t) => t.key === 'yinling' && L.load?.passive.includes(t.uid))) g *= 1.1; // 引灵佩
       if (L.stall) g = 0; // 道心蒙尘
       L.xp += g;
       if (this.capped()) L.xp = Math.min(L.xp, this.need());
@@ -456,6 +471,8 @@ export class Game {
       return;
     }
 
+    if (L.inDao) await resolvePending(this);
+    L.maxStones = Math.max(L.maxStones ?? 0, L.stones);
     await boardLap(this);
     if (this.dead()) return;
     this.checkPages();
@@ -504,7 +521,7 @@ export class Game {
         p = Math.max(p * 1.5, 0.12);
         delete L.flags.extraCall;
       }
-      const forced = (this.tflag('call6') && L.age === 6) || (this.tflag('call12') && L.age === 12) || (L.origin === '修仙世家' && L.age === 8) || L.flags.forceCall;
+      const forced = (this.tflag('call6') && L.age === 6) || (this.tflag('call12') && L.age === 12) || ((L.origin === '修仙世家' || L.flags.sectCall) && L.age === 8) || L.flags.forceCall;
       if (forced || chance(p)) await this.immortalCall();
     }
     // 本世同行者相遇（命灯决定）
@@ -525,7 +542,7 @@ export class Game {
     else if (this.tflag('goodRoot') || L.flags.forceGoodRoot) r = ROOTS[6];
     else {
       const aff = this.M.wheel.affinity ?? 0;
-      r = weighted(ROOTS, (x) => (x.id === 'none' ? Math.max(2, 18 - L.attrs.luck - aff * 3 - (this.tflag('noNoRoot') ? 99 : 0)) : x.w + (x.speed >= 1.2 ? L.attrs.luck * 0.4 : 0)))!;
+      r = weighted(ROOTS, (x) => (x.id === 'none' ? Math.max(2, 18 - L.attrs.luck - aff * 3 - (this.tflag('noNoRoot') || L.flags.noNoRoot ? 99 : 0)) : x.w + (x.speed >= 1.2 ? L.attrs.luck * 0.4 : 0)))!;
     }
     L.root = r.id;
     if (r.id === 'none') {
@@ -554,10 +571,12 @@ export class Game {
     L.realm = 1;
     L.route = 'rogue';
     if (L.root === 'unknown') L.root = 'innate';
-    L.skills = [{ id: 'sword', lvl: 1 }];
+    L.skills = [{ id: 'sword', lvl: 1, grade: 0, bm: true }];
+    ensureCult(L);
+    this.log('你一岁时便引气入体，练气一层。', 'milestone');
+    startKit(this);
     L.maxHp = this.calcMaxHp();
     L.hp = L.maxHp;
-    this.log('你一岁时便引气入体，练气一层。', 'milestone');
   }
 
   async enterDao() {
@@ -570,12 +589,18 @@ export class Game {
     const opts: SkillId[] = ['sword', 'orbit', 'thunder', 'fire'];
     const cur = this.topSchool();
     if (cur === 'demon') opts[3] = 'ink';
-    const i = await this.ask('择本命', '入道第一件事，是选一件与你性命相连的法宝。', opts.map((s) => `${SKILL_NAMES[s]}（${SCHOOL_NAMES[SKILL_SCHOOL[s]]}）`), 'milestone');
-    L.skills = [{ id: opts[i], lvl: L.flags.swordStart && opts[i] === 'sword' ? 2 : 1 }];
-    L.school[SKILL_SCHOOL[opts[i]]] += 5;
+    const i = await this.ask('择本命', '入道第一件事，是选一门本命功法。本命功法与道基相合时，层数上限 +1。', opts.map((s) => `${SKILL_NAMES[s]}（${SCHOOL_NAMES[SKILL_SCHOOL[s]]}，配${GONGFA[s].qi}）｜${GONGFA[s].desc}`), 'milestone');
+    const bm = opts[i];
+    L.skills = L.skills.filter((s) => s.id !== bm);
+    L.skills.unshift({ id: bm, lvl: L.flags.swordStart && bm === 'sword' ? 2 : 1, grade: GONGFA[bm].grade0, bm: true });
+    for (const s of L.skills.slice(1)) delete s.bm;
+    L.school[SKILL_SCHOOL[bm]] += 5;
+    ensureCult(L);
     L.maxHp = this.calcMaxHp();
     L.hp = L.maxHp;
-    this.log(`${cnAge(L.age)}岁，你${L.route === 'sect' ? '拜入宗门' : '随散修云游'}，踏上仙途，本命法宝「${SKILL_NAMES[opts[i]]}」。`, 'milestone', { hl: '', score: 0 });
+    this.log(`${cnAge(L.age)}岁，你${L.route === 'sect' ? '拜入宗门' : '随散修云游'}，踏上仙途，本命功法${SKILL_NAMES[bm]}，本命法宝凡器「${L.bag!.find((t) => t.key === bm)?.name ?? ''}」。`, 'milestone', { hl: '', score: 0 });
+    startKit(this);
+    autoEquip(L);
     this.highlight('踏上仙途', 40, 'dao');
     // 入门试炼
     await this.fight({ kind: 'beast', title: '入门试炼', loc: 'trial0', tutorial: true });
@@ -791,32 +816,50 @@ export class Game {
       this.trace('heart_demon');
     }
     if (L.realm === 5 && L.partner && L.wish?.id === 'W39') this.completeWish();
-    // 渡劫后悟道一次
-    this.upgradeRandomSkill('渡劫后顿悟');
+    // 突破：本命功法 +1 层；渡劫所悟：自选一门 +1 层
+    const bm = L.skills.find((s) => s.bm);
+    if (bm) layerUp(this, bm, '突破');
+    const can = L.skills.filter((s) => s.lvl < layerCap(L, s));
+    if (can.length) {
+      const j = can.length > 1 ? await this.choose({ title: '渡劫所悟', text: '劫雷里看清了一点东西。把它用在哪门功法上？', options: can.map((s) => ({ label: SKILL_NAMES[s.id], desc: `${LAYER_NAMES[s.lvl]} → ${LAYER_NAMES[s.lvl + 1]}` })), style: 'milestone', key: 'trialInsight', autoPick: 0 }) : 0;
+      layerUp(this, can[j] ?? can[0], '渡劫所悟');
+    } else L.xinde = (L.xinde ?? 0) + 2;
+    // 宗门传诀 / 散修机缘
+    if (L.route === 'sect') {
+      this.log('宗门按境界赐下一枚附诀。');
+      grantFujue(this);
+    } else if (chance(0.5)) grantFujue(this);
+    if (L.skills.length < this.slots()) {
+      const fresh = (['sword', 'orbit', 'thunder', 'fire', 'frost'] as SkillId[]).filter((x) => !L.skills.some((s) => s.id === x));
+      if (fresh.length) {
+        const pool = fresh.sort(() => rand() - 0.5).slice(0, 2);
+        const k = await this.choose({ title: L.route === 'sect' ? '宗门传功' : '散修机缘', text: `${REALMS[L.realm].name}之后多了一个功法位。挑一门功法（附一件凡器）。`, options: [...pool.map((x) => ({ label: SKILL_NAMES[x], desc: `${SCHOOL_NAMES[SKILL_SCHOOL[x]]} · ${GONGFA[x].desc}` })), { label: '暂且空着' }], style: 'milestone', key: 'newGong', autoPick: 0 });
+        if (k < pool.length) learnGong(this, pool[k]);
+      }
+    }
   }
 
+  slots() {
+    return [2, 2, 3, 4, 4, 4][Math.max(0, this.L.realm)];
+  }
+
+  // 顿悟：随机一门未到上限的功法 +1 层，都到顶则化作心得
   upgradeRandomSkill(reason: string) {
     const L = this.L;
-    const up = L.skills.filter((s) => s.lvl < 5);
-    if (!up.length) return;
-    const s = pick(up);
-    s.lvl += 1;
-    this.log(`${reason}：「${SKILL_NAMES[s.id]}」升至${CN_NUM[s.lvl]}阶。`);
+    const up = L.skills.filter((s) => s.lvl < layerCap(L, s));
+    if (!up.length) {
+      if (L.skills.length) {
+        L.xinde = (L.xinde ?? 0) + 1;
+        this.log(`${reason}：功法都到了此境上限，化作心得 +1。`);
+      }
+      return;
+    }
+    layerUp(this, pick(up), reason);
   }
 
+  // 得一门功法（附凡器）；已会则 +1 层
   addSkill(id: SkillId) {
-    const L = this.L;
-    const s = L.skills.find((x) => x.id === id);
-    if (s) {
-      if (s.lvl < 5) s.lvl += 1;
-      this.log(`「${SKILL_NAMES[id]}」升至${CN_NUM[s.lvl]}阶。`);
-    } else if (L.skills.length < 4) {
-      L.skills.push({ id, lvl: 1 });
-      this.log(`得法宝「${SKILL_NAMES[id]}」。`);
-    } else {
-      this.upgradeRandomSkill('法宝位已满，化作灵力');
-    }
-    if (id === 'art' && (L.skills.find((x) => x.id === 'art')?.lvl ?? 0) >= 5) this.gainPage(13);
+    learnGong(this, id);
   }
 
   // ================= 地点（命途棋盘的流年格） =================
@@ -1124,11 +1167,21 @@ export class Game {
       L.flags[e.flag] = (L.flags[e.flag] ?? 0) + 1;
       if (e.flag === 'saved' && L.flags.saved >= 5) this.trace('kind_heart');
       if (e.flag === 'gambleWin' && L.flags.gambleWin >= 2) this.trace('gambler');
-      if (e.flag === 'allUp') for (const s of L.skills) s.lvl = Math.min(5, s.lvl + 1);
-      if (e.flag === 'loseSkill' && L.skills.length) {
-        const s = L.skills.reduce((a, b) => (a.lvl >= b.lvl ? a : b));
-        s.lvl -= 1;
-        if (s.lvl <= 0) L.skills.splice(L.skills.indexOf(s), 1);
+      if (e.flag === 'allUp') for (const s of L.skills) layerUp(this, s, '灵液入腹');
+      if (e.flag === 'loseSkill') {
+        ensureCult(L);
+        const bmKey = L.skills.find((s) => s.bm)?.id;
+        const lose = L.bag!.filter((t) => !(t.kind === 'gong' && t.key === bmKey && L.load?.gong[t.key as SkillId] === t.uid));
+        if (lose.length) {
+          const t = lose.sort((a, b) => b.grade - a.grade)[0];
+          L.bag = L.bag!.filter((x) => x !== t);
+          this.log(`你交出了「${t.name}」。`);
+          autoEquip(L);
+        } else if (L.skills.length) {
+          const s = L.skills.reduce((a, b) => (a.lvl >= b.lvl ? a : b));
+          s.lvl = Math.max(1, s.lvl - 1);
+          this.log(`${SKILL_NAMES[s.id]}退回${LAYER_NAMES[s.lvl]}。`);
+        }
       }
       if (e.flag === 'sword_tomb') this.M.discoveries.includes('swordTomb') || this.M.discoveries.push('swordTomb');
     }
@@ -1167,7 +1220,11 @@ export class Game {
     if (e.banLoc) L.bans[e.banLoc.loc] = e.banLoc.years;
     if (e.reroll) this.fairBonus += e.reroll;
     if (e.skill && L.inDao) this.addSkill(e.skill);
-    else if (e.skill) L.flags['pending_' + e.skill] = 1;
+    else if (e.skill) L.flags['pendStart_' + e.skill] = 0;
+    if (e.fujue && L.inDao) grantFujue(this, typeof e.fujue === 'string' ? e.fujue : undefined);
+    if (e.item && L.inDao) grantItem(this, e.item === '?' ? pick(Object.keys(ITEMS)) : e.item);
+    if (e.canye && L.inDao) await upgradeGrade(this, this.sim);
+    if (e.xinde && L.inDao) L.xinde = (L.xinde ?? 0) + e.xinde;
     if (e.spareChiyi) L.flags.chiyiSpared = (L.flags.chiyiSpared ?? 0) + 1;
     if (e.killChiyi) {
       L.flags.chiyiDead = 1;
@@ -1178,8 +1235,11 @@ export class Game {
     if (e.epitaph) L.epitaphSpecial = e.epitaph;
     // 一人千面
     if (e.flag === 'giftSkill' || e.flag === 'pastNotes') {
-      if (L.inDao) this.addSkill(pick(['sword', 'orbit', 'thunder', 'fire', 'frost'] as SkillId[]));
-      else L.flags.pending_sword = 1;
+      if (L.inDao) {
+        const id = pick(['sword', 'orbit', 'thunder', 'fire', 'frost'] as SkillId[]);
+        this.addSkill(id);
+        giveQi(this, id, Math.min(2, Math.max(0, L.realm - 1)), true);
+      } else L.flags.pendStart_sword = 0;
       if (e.flag === 'pastNotes') L.school[this.topSchool()] += 20;
     }
     if (e.flag === 'fortuneYear') L.flags.fortuneYear = L.age;
@@ -1448,20 +1508,38 @@ export class Game {
   async market() {
     const L = this.L;
     L.marketCd = 2;
+    ensureCult(L);
+    rotateShop(L);
+    const bought = new Set<number>();
     for (;;) {
-      const items = [
-        { label: `如意骰（灵石 30）：下一次掷骰任选点数`, cost: 30, fn: () => { L.dice && (L.dice.ruyi += 1); } },
-        { label: `疗伤丹（灵石 20）：清空暗伤，回满气血`, cost: 20, fn: () => { L.injuries = 0; L.hp = L.maxHp; } },
-        { label: `续命丹（灵石 60）：寿元 +10`, cost: 60, fn: () => { L.lifeBonus += 10; } },
-        { label: `悟道玉简（灵石 50）：随机一件法宝升阶`, cost: 50, fn: () => this.upgradeRandomSkill('参悟玉简') },
-        { label: `破境丹（灵石 80）：修为 +15%`, cost: 80, fn: () => { L.xp += this.need() * 0.15; } },
+      const yuCost = 50 + 30 * L.realm;
+      const shop = shopItems(this);
+      const items: { label: string; desc?: string; cost: number; fn: () => void | Promise<void>; score: number; once?: boolean }[] = [
+        ...shop.map((x) => ({ ...x, label: `${x.label}（灵石 ${x.cost}）`, once: true })),
+        { label: `悟道玉简（灵石 ${yuCost}）`, desc: '自选一门功法 +1 层', cost: yuCost, score: 2.5, fn: async () => {
+          const can = L.skills.filter((s) => s.lvl < layerCap(L, s));
+          if (!can.length) { L.xinde = (L.xinde ?? 0) + 1; return; }
+          const j = can.length > 1 ? await this.choose({ title: '悟道玉简', text: '参悟哪门功法？', options: can.map((s) => ({ label: SKILL_NAMES[s.id], desc: `${LAYER_NAMES[s.lvl]} → ${LAYER_NAMES[s.lvl + 1]}` })), style: 'event', key: 'yujian', autoPick: 0 }) : 0;
+          layerUp(this, can[j] ?? can[0], '参悟玉简');
+        } },
+        { label: `如意骰（灵石 30）`, desc: '下一次掷骰任选点数', cost: 30, score: 0, fn: () => { L.dice && (L.dice.ruyi += 1); } },
+        { label: `疗伤丹（灵石 20）`, desc: '清空暗伤，回满气血', cost: 20, score: L.injuries ? 3 : 0, fn: () => { L.injuries = 0; L.hp = L.maxHp; } },
+        { label: `续命丹（灵石 60）`, desc: '寿元 +10', cost: 60, score: 0.5, fn: () => { L.lifeBonus += 10; } },
+        { label: `破境丹（灵石 80）`, desc: '修为 +15%', cost: 80, score: 1, fn: () => { L.xp += this.need() * 0.15; } },
       ];
-      const opts = items.map((it) => ({ label: it.label, disabled: L.stones < it.cost }));
-      const i = await this.choose({ title: '坊市', text: `坊市开张。你有灵石 ${L.stones}。`, options: [...opts, { label: '离开' }], style: 'event', key: 'market' });
-      if (i >= items.length) break;
-      L.stones -= items[i].cost;
-      items[i].fn();
-      this.log(`在坊市买下${items[i].label.split('：')[0]}。`);
+      const shown = items.map((it, k) => ({ it, k })).filter((x) => !(x.it.once && bought.has(x.k)));
+      const opts = shown.map(({ it }) => ({ label: it.label, desc: it.desc, disabled: L.stones < it.cost }));
+      // 自动：挑最想要且买得起、买完还留点底的那件
+      const want = shown.map((x, j) => ({ j, s: x.it.score, ok: L.stones - x.it.cost >= 20 })).filter((x) => x.ok && x.s >= 2.5).sort((a, b) => b.s - a.s)[0];
+      const i = await this.choose({ title: '坊市', text: `坊市开张。你有灵石 ${L.stones}，心得 ${L.xinde ?? 0}。`, options: [...opts, { label: '离开' }], style: 'event', key: 'market', autoPick: want ? want.j : opts.length });
+      if (i >= shown.length) break;
+      const { it, k } = shown[i];
+      if (L.stones < it.cost) break;
+      L.stones -= it.cost;
+      L.marketSpent = (L.marketSpent ?? 0) + it.cost;
+      if (it.once) bought.add(k);
+      this.log(`在坊市买下${it.label.split('（')[0]}。`);
+      await it.fn();
       this.io.refresh();
     }
   }
@@ -1508,7 +1586,9 @@ export class Game {
       else L.merit += 20;
     } else if (type === 'treasure') {
       await this.ask('前世法宝', fill(r.open), ['取回'], 'event', true);
-      this.addSkill(pick(['sword', 'orbit', 'thunder', 'fire'] as SkillId[]));
+      const id = pick(['sword', 'orbit', 'thunder', 'fire'] as SkillId[]);
+      this.addSkill(id);
+      giveQi(this, id, 2, true);
     }
     if (!fixed) return;
     L.regretsActive = L.regretsActive.filter((x) => x !== fixedRegret);
@@ -1600,7 +1680,11 @@ export class Game {
         { label: `请援｜1 点人情，${avail[0]?.name ?? '无可参战伙伴'}参战`, disabled: !avail.length || L.favor < 1 },
         { label: `避劫｜折寿 ${Math.max(1, this.step)} 年，作废本回合机缘`, disabled: noAvoid },
       ];
-      const i = await this.choose({ title: `出征 · ${o.title}`, text: `劫难：${kindName}\n境界：${REALMS[realm].name}\n\n${mutText}`, options: opts, style: 'battle', key: 'battlePrep', important: true });
+      const lo = loadoutSpec(this);
+      const st = this.playerStats();
+      const dps = estDps(lo.gong ?? [], st.dmgMul * (1 + 0.45 * (realm - 1)) * BATTLE_POWER);
+      const kit = `功法 ${lo.gong!.map((x) => `${x.name}${LAYER_NAMES[x.lvl]}`).join('、') || '无'}${lo.idle!.length ? `（${lo.idle!.join('、')}无器可御）` : ''}\n估算秒伤 ${dps}　法宝 ${[...lo.passives!, ...lo.actives!.map((a) => a.id)].map((k) => ITEMS[k]?.name).join('、') || '无'}`;
+      const i = await this.choose({ title: `出征 · ${o.title}`, text: `劫难：${kindName}\n境界：${REALMS[realm].name}\n${kit}\n\n${mutText}`, options: opts, style: 'battle', key: 'battlePrep', important: true });
       if (i === 1) {
         L.stones -= formCost;
         formation = true;
@@ -1628,12 +1712,7 @@ export class Game {
     }
     if (mutators.length) this.log(`战场词条：${mutators.map((m) => m.name).join('、')}`, 'battle');
     const foxGuard = this.lamp('fox') >= 5 && !L.flags.foxDead && !L.flags.foxAway && L.inDao;
-    const firstOfRealm = !L.firstRealmBattle.includes(realm) && !o.tutorial;
-    if (firstOfRealm) {
-      L.firstRealmBattle.push(realm);
-      this.upgradeRandomSkill('初入此境，灵台一震');
-      if (L.skills.length < 4 && L.realm >= 2) this.addSkill(pick(['orbit', 'thunder', 'fire', 'frost'].filter((s) => !L.skills.some((x) => x.id === s)) as SkillId[]));
-    }
+    if (!L.firstRealmBattle.includes(realm) && !o.tutorial) L.firstRealmBattle.push(realm);
     let boss = o.boss;
     if (mainLine) boss = this.M.saga.volume >= 3 ? 'lord' : 'knock';
     const spec: BattleSpec = {
@@ -1647,11 +1726,12 @@ export class Game {
       partners,
       foxGuard,
       skills: L.skills.map((s) => ({ ...s })),
-      player: this.playerStats(),
+      ...loadoutSpec(this),
+      player: { ...this.playerStats(), dmgMul: this.playerStats().dmgMul * BATTLE_POWER },
       formation,
       boss,
       heartDemon: isTrial && realm === 4,
-      heartMod: (L.flags.heartUp ? 1 : 0) - (L.flags.heartDown ? 1 : 0),
+      heartMod: (L.flags.heartUp ? 1 : 0) - (L.flags.heartDown ? 1 : 0) - ((L.bag ?? []).some((t) => t.key === 'qingxin' && L.load?.passive.includes(t.uid)) ? 1 : 0),
       scholar: mutators.some((m) => m.id === 'M21'),
       ascetic: mutators.some((m) => m.id === 'M24'),
       reward,
@@ -1666,8 +1746,10 @@ export class Game {
 
   afterBattle(o: { kind: BattleKind; title: string; loc: string; boss?: Boss; mode?: 'ask' | 'free' }, spec: BattleSpec, res: BattleResult) {
     const L = this.L;
-    L.skills = res.skills;
     L.kills += res.kills;
+    const cultLines = afterBattleCult(this, spec, res, !!o.boss);
+    if (cultLines.length) this.log(cultLines.join('；') + '。', 'battle');
+    if (o.title === '宗门大比' && res.win) L.flags.tourneyWin = 1;
     L.merit += res.purified * 5;
     if (!L.battleKinds.includes(o.kind)) L.battleKinds.push(o.kind);
     if (L.battleKinds.length >= 3) this.gainPage(6);
@@ -1687,10 +1769,15 @@ export class Game {
     if (o.boss === 'hebo' && res.win) {
       this.log('河伯珠落在你掌心，冰凉。', 'battle');
       this.addSkill('frost');
+      giveQi(this, 'frost', 2, true);
     }
     if (res.lifeOrbs) L.lifeBonus += res.lifeOrbs;
     if (res.partnerSaved && res.win && L.wish?.id === 'W40') this.completeWish();
 
+    if (res.fled) {
+      L.hp = Math.max(1, res.hp);
+      return this.fled(o);
+    }
     const mainLine = spec.boss === 'knock' || spec.boss === 'lord';
     if (res.win) {
       L.battlesWon += 1;
@@ -1726,6 +1813,11 @@ export class Game {
     L.hp = Math.max(1, L.maxHp * 0.2);
     this.log(`${o.title}：败。你重伤遁走，折寿 ${loss} 年，暗伤 3 回合。`, 'battle');
     if (L.age >= this.lifespan()) this.die('伤重不治', o.loc);
+  }
+
+  // 遁地符：脱战，不胜不败
+  fled(o: { title: string }) {
+    this.log(`${o.title}：你捏碎遁地符遁走，什么也没得到。`, 'battle');
   }
 
   ascend(res: BattleResult) {
@@ -1868,6 +1960,8 @@ export class Game {
     const M = this.M;
     M.deaths += 1;
     recordLegacies(this);
+    settleBook(this);
+    const newAch = checkAchievements(this);
     M.recentChoices = [L.choicesDone.slice(), ...(M.recentChoices ?? [])].slice(0, 2);
     if (L.hook && !L.hook.outcome) await this.hookEnd('open', '到死没走完');
     this.checkWish(true);
@@ -1934,6 +2028,10 @@ export class Game {
     }
     M.lastEra = L.era ?? null;
     if (acqLines.length) await this.choose({ title: '故人', text: acqLines.join('\n'), options: [{ label: '记下' }], style: 'well' });
+    if (newAch.length) {
+      metaCult(M).newAch = newAch;
+      await this.choose({ title: '轮回碑', text: newAch.map((id) => { const a = ACHIEVEMENTS.find((x) => x.id === id)!; return `【${a.name}】${a.cond}\n　→ ${a.reward}`; }).join('\n'), options: [{ label: '刻下' }], style: 'well' });
+    }
 
     // 前世遗憾
     const reg = this.makeRegret();

@@ -1,7 +1,8 @@
 // 劫难战斗逻辑：与画面分离，界面和模拟脚本共用同一套规则
-import type { BattleSpec, BattleResult } from './spec';
+import type { BattleSpec, BattleResult, BattleGong } from './spec';
 import type { Skill, SkillId } from '../game/types';
 import { rand } from '../game/rng';
+import { FJ_ADD_CAP, ITEMS, ORBS_PER_CELL, SK_SHORT } from '../data/cult';
 
 export type EType = 'swordsman' | 'crow' | 'ghost' | 'mage' | 'elite' | 'banner' | 'puppet' | 'mirror' | 'general' | 'lord' | 'inkeye' | 'lost' | 'chiyi' | 'hebo';
 
@@ -27,6 +28,9 @@ export interface Enemy {
   tx?: number;
   ty?: number;
   xpVal: number;
+  dot?: number; // 蚀骨：每秒伤害
+  dotT?: number;
+  dotSrc?: string;
 }
 
 export interface Shot {
@@ -44,6 +48,9 @@ export interface Shot {
   homing?: boolean;
   slow?: boolean;
   kind?: string;
+  g?: GState; // 出自哪门功法
+  bounce?: number; // 回影剩余次数
+  chained?: boolean; // 引雷引出的（不再连锁）
 }
 
 export interface Zone {
@@ -56,6 +63,7 @@ export interface Zone {
   kind: 'fire' | 'ink' | 'firewell' | 'mist';
   enemyHarm: boolean;
   playerHarm: boolean;
+  src?: string;
 }
 
 export interface Warn {
@@ -105,21 +113,26 @@ export interface Partner {
   count: number;
 }
 
-export interface LevelChoice {
-  label: string;
-  desc: string;
-  apply: () => void;
+// 战斗中的一门功法
+export interface GState extends BattleGong {
+  has: Record<string, boolean>;
+  cdMul: number;
+  add: number; // 附诀加法加成
 }
-
-const SKILL_LABEL: Record<SkillId, string> = { sword: '青锋飞剑', orbit: '环身剑印', thunder: '掌心雷符', fire: '离火金乌翎', frost: '玄冰寒魄', ink: '百鬼幡', art: '自创道法' };
-const SKILL_DESC: Record<SkillId, string> = {
-  sword: '自动射出追踪飞剑',
-  orbit: '剑印环绕周身',
-  thunder: '定时落雷轰击敌群',
-  fire: '投下灼烧火区',
-  frost: '寒魄冻结敌人',
-  ink: '召出墨魂扑向敌人',
-  art: '三束高速灵光穿透',
+export interface ActiveState {
+  uid: number;
+  id: string;
+  uses: number;
+  recharge: boolean;
+  cost: number;
+  charge: number;
+}
+const gstate = (g: BattleGong): GState => {
+  const has: Record<string, boolean> = {};
+  for (const f of g.fj) has[f] = true;
+  const cdMul = (has.jushi ? 1.3 : 1) * (has.jijue ? 0.8 : 1);
+  const add = (has.jushi ? 0.6 : 0) - (has.jijue ? 0.1 : 0);
+  return { ...g, fj: [...g.fj], has, cdMul, add };
 };
 
 export const ARENA = 900;
@@ -141,15 +154,30 @@ export class BattleSim {
   fx: Fx[] = [];
   partners: Partner[] = [];
   skills: Skill[];
+  gong: GState[];
   cds: Record<string, number> = {};
+  passive: Record<string, boolean> = {};
+  actives: ActiveState[] = [];
+  dmgBy: Record<string, number> = {};
+  procs: Record<string, number> = {};
+  orbsGot = 0;
+  amulet = 0;
+  amuletUsed = 0;
+  saves = 0;
+  chainCd = 0;
+  huxinT = 0;
+  huxinCd = 0;
+  zhenStacks = 0;
+  zhenAcc = 0;
+  moveAcc = 0;
+  tayunReady = false;
+  shihunKills = 0;
+  reflectT = 0;
+  healT = 5;
+  moving = false;
   kills = 0;
   purified = 0;
-  xp = 0; // 本场悟道经验
-  totalXp = 0;
-  level = 1;
-  levelNeed = 10;
-  levelUp: LevelChoice[] | null = null;
-  pendingLevels = 0;
+  totalXp = 0; // 本场悟道（35% 折算修为）
   stones = 0;
   done = false;
   result: BattleResult | null = null;
@@ -194,7 +222,15 @@ export class BattleSim {
     this.maxHp = spec.player.maxHp;
     this.hp = Math.min(spec.player.hp, this.maxHp);
     this.skills = spec.skills.map((s) => ({ ...s }));
-    if (!this.skills.length) this.skills = [{ id: 'sword', lvl: 1 }];
+    const gong = spec.gong ?? this.skills.map((s) => ({ id: s.id, lvl: s.lvl, mul: 1, fj: [], name: SK_SHORT[s.id] }));
+    this.gong = gong.map(gstate);
+    if (!spec.gong && !this.gong.length) this.gong = [gstate({ id: 'sword', lvl: 1, mul: 1, fj: [], name: '剑' })];
+    for (const p of spec.passives ?? []) this.passive[p] = true;
+    this.amulet = spec.passives?.includes('hushen') ? spec.amulet ?? 3 : 0;
+    for (const a of spec.actives ?? []) {
+      const cost = ITEMS[a.id]?.cells ?? 0;
+      this.actives.push({ uid: a.uid, id: a.id, uses: a.uses, recharge: a.recharge, cost, charge: cost });
+    }
     for (const m of spec.mutators) this.mods[m.id] = true;
     this.arena = ARENA * (this.mods.M08 ? 0.85 : 1);
     this.strikesLeft = spec.kind === 'trial' ? spec.strikes : 0;
@@ -203,7 +239,7 @@ export class BattleSim {
     this.phoenix = spec.player.phoenix;
     const r = spec.realm;
     this.dmgScale = spec.player.dmgMul * (1 + 0.45 * (r - 1));
-    this.enemyScale = 1 + 0.75 * (r - 1);
+    this.enemyScale = (1 + 0.75 * (r - 1)) * (spec.enemyMul ?? 1);
     if (this.mods.M19) this.shield = this.maxHp * 0.3;
     for (const p of spec.partners) {
       const lamp = p.lamp;
@@ -330,7 +366,7 @@ export class BattleSim {
 
   // ---------- 主循环 ----------
   update(dt: number, mx: number, my: number) {
-    if (this.done || this.levelUp) return;
+    if (this.done) return;
     this.t += dt;
     if (this.messageT > 0) this.messageT -= dt;
     const s = this.spec;
@@ -350,7 +386,10 @@ export class BattleSim {
       this.py += my * speed * dt;
       this.lastMoveX = mx;
       this.lastMoveY = my;
+      this.moveAcc += Math.hypot(mx, my) * speed * dt;
     }
+    this.moving = ml > 0.01;
+    this.updateTriggers(dt);
     const dc = Math.hypot(this.px, this.py);
     if (dc > this.arena) {
       this.px *= this.arena / dc;
@@ -522,18 +561,18 @@ export class BattleSim {
     }
   }
 
-  // ---------- 技能 ----------
+  // ---------- 功法 ----------
   skillLvl(id: SkillId) {
-    return this.skills.find((s) => s.id === id)?.lvl ?? 0;
+    return this.gong.find((s) => s.id === id)?.lvl ?? 0;
   }
 
-  nearest(maxD = 9999, from?: { x: number; y: number }): Enemy | null {
+  nearest(maxD = 9999, from?: { x: number; y: number }, skip?: Set<number>): Enemy | null {
     const fx = from?.x ?? this.px;
     const fy = from?.y ?? this.py;
     let best: Enemy | null = null;
     let bd = maxD * maxD;
     for (const e of this.enemies) {
-      if (e.hp <= 0 || e.invuln) continue;
+      if (e.hp <= 0 || e.invuln || skip?.has(e.id)) continue;
       const d = (e.x - fx) ** 2 + (e.y - fy) ** 2;
       if (d < bd) {
         bd = d;
@@ -543,11 +582,58 @@ export class BattleSim {
     return best;
   }
 
+  proc(k: string, n = 1) {
+    this.procs[k] = (this.procs[k] ?? 0) + n;
+  }
+
+  // 触发型法宝与站桩 / 走位状态
+  updateTriggers(dt: number) {
+    const P = this.passive;
+    if (P.zhenyue) {
+      if (this.moving) {
+        this.zhenStacks = 0;
+        this.zhenAcc = 0;
+      } else {
+        this.zhenAcc += dt;
+        if (this.zhenAcc >= 1 && this.zhenStacks < 5) {
+          this.zhenAcc -= 1;
+          this.zhenStacks += 1;
+          if (this.zhenStacks === 5) this.proc('镇岳印');
+        }
+      }
+    }
+    if (P.tayun && this.moveAcc >= 300) {
+      this.moveAcc -= 300;
+      this.tayunReady = true;
+    }
+    if (P.changchun) {
+      this.healT -= dt;
+      if (this.healT <= 0) {
+        this.healT = 5;
+        this.heal(this.maxHp * 0.02);
+      }
+    }
+    if (this.reflectT > 0) this.reflectT -= dt;
+  }
+
+  // 一次出手的总倍率：附诀加法加成（含触发型）封顶 +150%
+  castMul(g: GState, mul: number, useTayun: boolean) {
+    let add = g.add;
+    if (this.passive.huxin && this.t < this.huxinT) add += 0.3;
+    if (this.passive.zhenyue) add += 0.06 * this.zhenStacks;
+    if (useTayun && this.tayunReady) {
+      this.tayunReady = false;
+      add += 0.5;
+      this.proc('踏云履');
+    }
+    return mul * g.mul * (1 + Math.min(FJ_ADD_CAP, add));
+  }
+
   dmgRoll(base: number, kind: string): number {
     let d = base * this.dmgScale;
     if (kind === 'frost' && this.mods.M01) d *= 1.2;
     if (this.mods.M18 && this.hp < this.maxHp * 0.3) d *= 1.25;
-    if (this.mods.M24 && this.skills.length < 2) d *= 1.15;
+    if (this.mods.M24 && this.gong.length < 2) d *= 1.15;
     const crit = rand() < this.spec.player.crit;
     if (crit) d *= this.mods.M20 ? 2.4 : 2;
     else if (this.mods.M20) d *= 0.9;
@@ -555,69 +641,192 @@ export class BattleSim {
   }
 
   updateSkills(dt: number) {
-    for (const sk of this.skills) {
-      const id = sk.id;
-      const lvl = sk.lvl;
+    for (const g of this.gong) {
+      const id = g.id;
+      const lvl = g.lvl;
       this.cds[id] = (this.cds[id] ?? 0) - dt;
       if (id === 'orbit') {
-        const n = 2 + lvl;
-        const rad = 78;
-        for (let i = 0; i < n; i++) {
-          const a = this.t * 3 + (i / n) * Math.PI * 2;
-          const ox = this.px + Math.cos(a) * rad;
-          const oy = this.py + Math.sin(a) * rad;
-          for (const e of this.enemies) {
-            if (e.hp <= 0 || e.invuln) continue;
-            if ((e.x - ox) ** 2 + (e.y - oy) ** 2 < (e.r + 12) ** 2) {
-              const key = 'orb' + i;
-              if ((e.cd[key] ?? 0) <= this.t) {
-                e.cd[key] = this.t + 0.45;
-                this.damage(e, this.dmgRoll(7 + 3 * lvl, 'orbit'));
-              }
-            }
-          }
-        }
+        this.updateOrbit(g);
         continue;
       }
       if (this.cds[id] > 0) continue;
-      const target = this.nearest(id === 'thunder' ? 480 : 700);
+      const target = this.nearest((id === 'thunder' ? 480 : 700) * (g.has.guangyu ? 1.2 : 1));
       if (!target) continue;
-      if (id === 'sword') {
-        this.cds[id] = Math.max(0.35, 0.95 - 0.09 * lvl);
-        const n = 1 + Math.floor(lvl / 2);
-        const pierce = (this.mods.M02 ? 1 : 0) + (lvl >= 4 ? 1 : 0);
-        for (let i = 0; i < n; i++) {
-          const ang = Math.atan2(target.y - this.py, target.x - this.px) + (i - (n - 1) / 2) * 0.18;
-          this.shots.push({ x: this.px, y: this.py, vx: Math.cos(ang) * 620, vy: Math.sin(ang) * 620, dmg: this.dmgRoll(11 + 4 * lvl, 'sword'), r: 8, life: 1.2, pierce, hit: new Set(), color: '#4fd2f5', enemy: false, homing: true, kind: 'sword' });
-        }
-      } else if (id === 'thunder') {
-        this.cds[id] = Math.max(0.8, 2.4 - 0.28 * lvl);
-        const r = 70 + 6 * lvl;
-        this.fx.push({ x: target.x, y: target.y, t: 0, max: 0.35, kind: 'bolt' });
-        for (const e of this.enemies) if ((e.x - target.x) ** 2 + (e.y - target.y) ** 2 < r * r) this.damage(e, this.dmgRoll(22 + 9 * lvl, 'thunder'));
-      } else if (id === 'fire') {
-        this.cds[id] = 2.8;
-        const life = 3 * (this.mods.M04 ? 1.5 : 1);
-        this.zones.push({ x: target.x, y: target.y, r: 55 + 6 * lvl, life, max: life, dps: 9 + 5 * lvl, kind: 'fire', enemyHarm: true, playerHarm: false });
-      } else if (id === 'frost') {
-        this.cds[id] = Math.max(0.5, 1.25 - 0.1 * lvl);
-        const ang = Math.atan2(target.y - this.py, target.x - this.px);
-        this.shots.push({ x: this.px, y: this.py, vx: Math.cos(ang) * 520, vy: Math.sin(ang) * 520, dmg: this.dmgRoll(10 + 5 * lvl, 'frost'), r: 9, life: 1.4, pierce: lvl >= 3 ? 1 : 0, hit: new Set(), color: '#6fb6e8', enemy: false, slow: true, kind: 'frost' });
-      } else if (id === 'ink') {
-        this.cds[id] = 2.4;
-        for (let i = 0; i < lvl; i++) {
-          const a = rand() * Math.PI * 2;
-          this.shots.push({ x: this.px, y: this.py, vx: Math.cos(a) * 200, vy: Math.sin(a) * 200, dmg: this.dmgRoll(16 + 4 * lvl, 'ink'), r: 10, life: 3, pierce: 0, hit: new Set(), color: '#4a3d6b', enemy: false, homing: true, kind: 'ink' });
-        }
-      } else if (id === 'art') {
-        this.cds[id] = Math.max(0.6, 1.7 - 0.16 * lvl);
-        const ang0 = Math.atan2(target.y - this.py, target.x - this.px);
-        for (let i = -1; i <= 1; i++) {
-          const ang = ang0 + i * 0.12;
-          this.shots.push({ x: this.px, y: this.py, vx: Math.cos(ang) * 900, vy: Math.sin(ang) * 900, dmg: this.dmgRoll(12 + 6 * lvl, 'art'), r: 7, life: 0.9, pierce: 3, hit: new Set(), color: '#c9a23a', enemy: false, kind: 'art' });
+      const base = { sword: Math.max(0.35, 0.95 - 0.09 * lvl), thunder: Math.max(0.8, 2.4 - 0.28 * lvl), fire: 2.8, frost: Math.max(0.5, 1.25 - 0.1 * lvl), ink: 2.4, art: Math.max(0.6, 1.7 - 0.16 * lvl), orbit: 1 }[id];
+      this.cds[id] = base * g.cdMul;
+      this.cast(g, target, this.castMul(g, 1, true), false);
+    }
+  }
+
+  orbitN(g: GState) {
+    return (2 + g.lvl + (g.has.lianzhu ? 1 : 0)) * (g.has.fenguang ? 3 : 1);
+  }
+  orbitR(g: GState) {
+    return 78 * (g.has.guangyu ? 1.4 : 1);
+  }
+
+  updateOrbit(g: GState) {
+    const n = this.orbitN(g);
+    const rad = this.orbitR(g);
+    const hitGap = 0.45 * g.cdMul;
+    for (let i = 0; i < n; i++) {
+      const a = this.t * 3 + (i / n) * Math.PI * 2;
+      const ox = this.px + Math.cos(a) * rad;
+      const oy = this.py + Math.sin(a) * rad;
+      for (const e of this.enemies) {
+        if (e.hp <= 0 || e.invuln) continue;
+        if ((e.x - ox) ** 2 + (e.y - oy) ** 2 < (e.r + 12) ** 2) {
+          const key = 'orb' + i;
+          if ((e.cd[key] ?? 0) <= this.t) {
+            e.cd[key] = this.t + hitGap;
+            const m = this.castMul(g, g.has.fenguang ? 0.45 : 1, false);
+            this.hit(e, this.dmgRoll(7 + 3 * g.lvl, 'orbit') * m, g, false);
+          }
         }
       }
     }
+  }
+
+  // 一次出手：分光一化为三，连珠多一发，引雷引出的这次 ×0.7 且不再连锁
+  cast(g: GState, target: Enemy, mul: number, chained: boolean) {
+    const id = g.id;
+    const lvl = g.lvl;
+    const split = g.has.fenguang ? 3 : 1;
+    const sm = g.has.fenguang ? 0.45 : 1;
+    const pierceAdd = g.has.chuanyun ? 2 : 0;
+    const homing = !!g.has.yufeng;
+    const bounce = g.has.huiying ? 2 : 0;
+    const area = g.has.guangyu ? 1.4 : 1;
+    const shoot = (ang: number, sp: number, base: number, r: number, life: number, pierce: number, color: string, extra: Partial<Shot>, m: number) =>
+      this.shots.push({ x: this.px, y: this.py, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, dmg: this.dmgRoll(base, id) * m, r: r * (area > 1 ? 1.25 : 1), life, pierce: pierce + pierceAdd, hit: new Set(), color, enemy: false, kind: id, g, bounce, chained, ...extra, homing: extra.homing || homing });
+    const volley = (m: number, angOff: number) => {
+      const ang0 = Math.atan2(target.y - this.py, target.x - this.px) + angOff;
+      const spread = (k: number, n: number, w: number) => ang0 + (k - (n - 1) / 2) * w;
+      if (id === 'sword') {
+        const n = (1 + Math.floor(lvl / 2)) * split;
+        for (let i = 0; i < n; i++) shoot(spread(i, n, split > 1 ? 0.14 : 0.18), 620, 11 + 4 * lvl, 8, 1.2, (this.mods.M02 ? 1 : 0) + (lvl >= 4 ? 1 : 0), '#4fd2f5', { homing: true }, m * sm);
+      } else if (id === 'frost') {
+        for (let i = 0; i < split; i++) shoot(spread(i, split, 0.2), 520, 10 + 5 * lvl, 9, 1.4, lvl >= 3 ? 1 : 0, '#6fb6e8', { slow: true }, m * sm);
+      } else if (id === 'ink') {
+        for (let i = 0; i < lvl * split; i++) {
+          const a = rand() * Math.PI * 2;
+          this.shots.push({ x: this.px, y: this.py, vx: Math.cos(a) * 200, vy: Math.sin(a) * 200, dmg: this.dmgRoll(16 + 4 * lvl, 'ink') * m * sm, r: 10 * (area > 1 ? 1.25 : 1), life: 3, pierce: pierceAdd, hit: new Set(), color: '#4a3d6b', enemy: false, homing: true, kind: 'ink', g, bounce, chained });
+        }
+      } else if (id === 'art') {
+        const n = 3 * split;
+        for (let i = 0; i < n; i++) shoot(spread(i, n, split > 1 ? 0.07 : 0.12), 900, 12 + 6 * lvl, 7, 0.9, 3, '#c9a23a', {}, m * sm);
+      } else if (id === 'thunder' || id === 'fire') {
+        // 范围类：分光 = 三处各落一次
+        const tg: Enemy[] = [target];
+        if (split > 1) {
+          const skip = new Set([target.id]);
+          for (let k = 1; k < 3; k++) {
+            const t2 = this.nearest(560, target, skip);
+            if (!t2) break;
+            skip.add(t2.id);
+            tg.push(t2);
+          }
+        }
+        for (const t of tg) {
+          if (id === 'thunder') {
+            const r = (70 + 6 * lvl) * area;
+            this.fx.push({ x: t.x, y: t.y, t: 0, max: 0.35, kind: 'bolt' });
+            for (const e of this.enemies) if ((e.x - t.x) ** 2 + (e.y - t.y) ** 2 < r * r) this.hit(e, this.dmgRoll(22 + 9 * lvl, 'thunder') * m * sm, g, chained);
+          } else {
+            const life = 3 * (this.mods.M04 ? 1.5 : 1);
+            this.zones.push({ x: t.x, y: t.y, r: (55 + 6 * lvl) * area, life, max: life, dps: (9 + 5 * lvl) * m * sm * g.mul, kind: 'fire', enemyHarm: true, playerHarm: false, src: id });
+          }
+        }
+      }
+    };
+    volley(mul, 0);
+    if (g.has.lianzhu) {
+      this.proc('连珠');
+      volley(mul * 0.6, 0.25);
+    }
+    if (split > 1) this.proc('分光');
+  }
+
+  // 功法命中：记账、蚀骨、引雷
+  hit(e: Enemy, amount: number, g: GState | undefined, chained: boolean) {
+    if (e.invuln || e.hp <= 0) return;
+    this.damage(e, amount, false, false, g?.id);
+    if (!g) return;
+    if (g.has.shigu && e.hp > 0) {
+      e.dot = Math.max(e.dot ?? 0, (amount * 0.4) / 3);
+      e.dotT = 3;
+      e.dotSrc = g.id;
+      this.proc('蚀骨');
+    }
+    if (g.has.yinlei && !chained && this.chainCd <= this.t && rand() < 0.2) {
+      const to = this.gong.find((x) => x.id === this.spec.chain && x !== g) ?? this.gong.find((x) => x !== g);
+      const tgt = this.nearest(700, e);
+      if (to && tgt) {
+        this.chainCd = this.t + 0.3;
+        this.proc('引雷');
+        this.fx.push({ x: e.x, y: e.y, x2: tgt.x, y2: tgt.y, t: 0, max: 0.3, kind: 'arc', color: '#7a6cf0' });
+        if (to.id === 'orbit') this.hit(tgt, this.dmgRoll(7 + 3 * to.lvl, 'orbit') * this.castMul(to, 0.7 * 3, false), to, true);
+        else this.cast(to, tgt, this.castMul(to, 0.7, false), true);
+      }
+    }
+  }
+
+  // ---------- 主动法宝 ----------
+  canUse(a: ActiveState) {
+    if (this.done) return false;
+    if (a.id === 'dundi' && (this.spec.kind === 'trial' || this.spec.boss === 'lord' || this.spec.boss === 'knock')) return false;
+    return a.recharge ? a.charge >= a.cost : a.uses > 0;
+  }
+
+  useActive(i: number, free = false) {
+    const a = this.actives[i];
+    if (!a || (!free && !this.canUse(a))) return false;
+    if (!free) {
+      if (a.recharge) a.charge -= a.cost;
+      else a.uses -= 1;
+    }
+    const name = ITEMS[a.id]?.name ?? a.id;
+    this.proc(name);
+    switch (a.id) {
+      case 'huichun':
+        this.heal(this.maxHp * 0.4);
+        this.fx.push({ x: this.px, y: this.py - 20, t: 0, max: 1, kind: 'text', text: '回春', color: '#3a8a5a' });
+        break;
+      case 'leihuo': {
+        let best: Enemy | null = null;
+        let bn = -1;
+        for (const e of this.enemies.slice(0, 40)) {
+          if (e.hp <= 0 || e.invuln) continue;
+          const n = this.enemies.filter((o) => (o.x - e.x) ** 2 + (o.y - e.y) ** 2 < 140 * 140).length;
+          if (n > bn) {
+            bn = n;
+            best = e;
+          }
+        }
+        if (best) {
+          const bx = best.x;
+          const by = best.y;
+          this.fx.push({ x: bx, y: by, t: 0, max: 0.4, kind: 'bolt' });
+          for (const e of this.enemies) if ((e.x - bx) ** 2 + (e.y - by) ** 2 < 150 * 150) this.damage(e, 70 * this.dmgScale, false, false, name);
+        }
+        break;
+      }
+      case 'dundi':
+        if (!free) {
+          this.say('遁地符：你钻进地里，逃了');
+          this.finish(false, { fled: true });
+        }
+        break;
+      case 'bagua':
+        this.reflectT = 2;
+        this.say('八卦镜：弹丸反噬', 1.2);
+        break;
+      case 'dingshen':
+        this.freezeT = Math.max(this.freezeT, 1.5);
+        this.say('定身', 1);
+        break;
+    }
+    return true;
   }
 
   updatePartners(dt: number) {
@@ -682,6 +891,11 @@ export class BattleSim {
     for (const e of this.enemies) {
       if (e.hp <= 0) continue;
       if (e.hitFlash > 0) e.hitFlash -= dt;
+      if (e.dotT && e.dotT > 0) {
+        e.dotT -= dt;
+        this.damage(e, (e.dot ?? 0) * dt, true, false, e.dotSrc);
+        if (e.hp <= 0) continue;
+      }
       if (frozenAll) continue;
       if (e.frozen > 0) {
         e.frozen -= dt;
@@ -759,7 +973,7 @@ export class BattleSim {
           e.cd.fire = (e.cd.fire ?? 1) - dt;
           if (e.cd.fire <= 0) {
             e.cd.fire = 0.9;
-            const n = 1 + Math.min(3, Math.floor(this.skills.reduce((a, s) => a + s.lvl, 0) / 4));
+            const n = 1 + Math.min(3, Math.floor(this.gong.reduce((a, s) => a + s.lvl, 0) / 4));
             for (let k = 0; k < n; k++) this.aimShot(e, 380, (e.tag === 'shadow' ? 0.035 : 0.06) * 0.7, (k - (n - 1) / 2) * 0.2);
           }
           break;
@@ -856,7 +1070,18 @@ export class BattleSim {
       s.y += s.vy * dt * slow;
       s.life -= dt;
       if (s.enemy) {
-        if ((s.x - this.px) ** 2 + (s.y - this.py) ** 2 < (s.r + 12) ** 2) {
+        const d2 = (s.x - this.px) ** 2 + (s.y - this.py) ** 2;
+        if (this.reflectT > 0 && d2 < 70 * 70) {
+          s.enemy = false;
+          s.vx = -s.vx * 1.4;
+          s.vy = -s.vy * 1.4;
+          s.dmg = 25 * this.dmgScale;
+          s.life = 2;
+          s.color = '#c9a23a';
+          s.kind = '八卦镜';
+          continue;
+        }
+        if (d2 < (s.r + 12) ** 2) {
           this.hurt(s.dmg, null, true);
           s.life = 0;
         }
@@ -866,10 +1091,27 @@ export class BattleSim {
         if (e.hp <= 0 || s.hit.has(e.id) || e.invuln) continue;
         if ((s.x - e.x) ** 2 + (s.y - e.y) ** 2 < (s.r + e.r) ** 2) {
           s.hit.add(e.id);
-          this.damage(e, s.dmg);
+          if (s.g) this.hit(e, s.dmg, s.g, !!s.chained);
+          else this.damage(e, s.dmg, false, false, s.kind);
           if (s.slow) e.frozen = Math.max(e.frozen, this.skillLvl('frost') >= 3 ? 1.2 : 0.4);
           if (s.kind === 'sword' && rand() < 0.4) this.fx.push({ x: this.px, y: this.py, x2: e.x, y2: e.y, t: 0, max: 0.3, kind: 'arc' });
           if (s.pierce-- <= 0) {
+            // 回影：弹向下一个敌人
+            if (s.bounce && s.bounce > 0) {
+              const nx = this.nearest(360, s, s.hit);
+              if (nx) {
+                s.bounce -= 1;
+                s.pierce = 0;
+                s.dmg *= 0.7;
+                const a = Math.atan2(nx.y - s.y, nx.x - s.x);
+                const sp = Math.hypot(s.vx, s.vy);
+                s.vx = Math.cos(a) * sp;
+                s.vy = Math.sin(a) * sp;
+                s.life = Math.max(s.life, 0.8);
+                this.proc('回影');
+                break;
+              }
+            }
             s.life = 0;
             break;
           }
@@ -882,7 +1124,7 @@ export class BattleSim {
   updateZones(dt: number) {
     for (const z of this.zones) {
       z.life -= dt;
-      if (z.enemyHarm) for (const e of this.enemies) if ((e.x - z.x) ** 2 + (e.y - z.y) ** 2 < (z.r + e.r) ** 2) this.damage(e, z.dps * this.dmgScale * dt, true);
+      if (z.enemyHarm) for (const e of this.enemies) if ((e.x - z.x) ** 2 + (e.y - z.y) ** 2 < (z.r + e.r) ** 2) this.damage(e, z.dps * this.dmgScale * dt, true, false, z.src);
       if (z.playerHarm && (this.px - z.x) ** 2 + (this.py - z.y) ** 2 < z.r * z.r) this.hurtRaw(this.maxHp * z.dps * dt);
     }
     this.zones = this.zones.filter((z) => z.life > 0);
@@ -909,7 +1151,7 @@ export class BattleSim {
             this.foxBlocked = true;
             this.partnerSaved = true;
             this.say('白狐替你挡下了这道雷');
-          } else this.hurtRaw(this.maxHp * w.dmgPct, true);
+          } else this.hurtRaw(this.maxHp * w.dmgPct * (w.kind === 'strike' && this.passive.bilei ? 0.7 : 1), true);
         }
         if (w.kind === 'strike') {
           for (const e of this.enemies) if ((e.x - w.x) ** 2 + (e.y - w.y) ** 2 < (w.r + e.r) ** 2) {
@@ -937,7 +1179,7 @@ export class BattleSim {
       }
       if (d < 18) {
         o.v = -1;
-        if (o.kind === 'xp') this.gainXp(1);
+        if (o.kind === 'xp') this.gainOrb();
         else {
           this.lifeOrbs += 1;
           this.fx.push({ x: this.px, y: this.py - 20, t: 0, max: 1, kind: 'text', text: '寿元 +1', color: '#3a8a5a' });
@@ -985,10 +1227,12 @@ export class BattleSim {
   }
 
   // ---------- 伤害结算 ----------
-  damage(e: Enemy, amount: number, silent = false, fromStrike = false) {
+  damage(e: Enemy, amount: number, silent = false, fromStrike = false, src?: string) {
     if (e.invuln || e.hp <= 0) return;
     if (e.type === 'mirror' && !fromStrike) amount *= 0.35;
     if (e.type === 'crow' && this.mods.M15) amount *= 1.3;
+    if (src) this.dmgBy[src] = (this.dmgBy[src] ?? 0) + Math.min(amount, e.hp);
+    if (this.passive.xueyin) this.heal(amount * 0.015);
     e.hp -= amount;
     e.hitFlash = 0.12;
     if (!silent && amount >= 1) this.fx.push({ x: e.x, y: e.y - e.r, t: 0, max: 0.6, kind: 'text', text: String(Math.round(amount)) });
@@ -1016,11 +1260,17 @@ export class BattleSim {
     if (e.tag === 'mirror' || e.tag === 'shadow') {
       if (e.tag === 'mirror') this.mirrorBeaten = true;
       this.say(e.tag === 'mirror' ? '心魔溃散——那张脸是你自己' : '心魔影溃散，你悟得一道');
-      if (e.tag === 'shadow') this.pendingLevels += 1;
     }
     if (e.tag === 'clone') this.cloneBeaten = true;
     this.kills += 1;
+    if (this.passive.shihun && ++this.shihunKills >= 15) {
+      this.shihunKills = 0;
+      this.proc('噬魂铃');
+      this.say('噬魂铃响', 0.8);
+      for (const o of this.enemies) if (o !== e && o.hp > 0 && (o.x - this.px) ** 2 + (o.y - this.py) ** 2 < 600 * 600) this.damage(o, 40 * this.dmgScale, true, false, '噬魂铃');
+    }
     let v = e.xpVal * (this.mods.M06 ? 1.3 : 1) * (this.mods.M14 ? 1.25 : 1) * (this.mods.M21 ? 0.9 : 1);
+    if (this.mods.M24) v *= 0.8;
     const n = Math.max(1, Math.round(v));
     for (let i = 0; i < n; i++) this.orbs.push({ x: e.x + (rand() - 0.5) * 20, y: e.y + (rand() - 0.5) * 20, v: 1, kind: 'xp' });
     let st = e.elite ? 10 : 1;
@@ -1044,15 +1294,29 @@ export class BattleSim {
   }
 
   hurtRaw(dmg: number, _isStrike = false, _isShot = false) {
-    dmg *= 1 - this.spec.player.armor;
+    dmg *= 1 - Math.min(0.6, this.spec.player.armor + (this.passive.xuanjia ? 0.1 : 0) + (this.passive.zhenyue ? 0.04 * this.zhenStacks : 0));
+    if (this.passive.huxin && dmg > 0 && this.t >= this.huxinCd) {
+      this.huxinT = this.t + 2;
+      this.huxinCd = this.t + 8;
+      this.proc('护心镜');
+    }
     if (this.shield > 0) {
       const s = Math.min(this.shield, dmg);
       this.shield -= s;
       dmg -= s;
     }
     this.hp -= dmg;
-    if (this.hp <= 0) {
+    if (this.hp <= 0 && this.saves < 2) {
+      if (this.amulet > 0 && !this.amuletUsed) {
+        this.amuletUsed = 1;
+        this.saves += 1;
+        this.hp = 1;
+        this.iframes = 2;
+        this.say('护身符碎了一角，你留住一口气');
+        return;
+      }
       if (this.foxGuard && this.spec.kind !== 'trial') {
+        this.saves += 1;
         this.foxGuard = false;
         this.foxBlocked = true;
         this.partnerSaved = true;
@@ -1062,6 +1326,7 @@ export class BattleSim {
       }
       if (this.rewindReady) {
         this.rewindReady = false;
+        this.saves += 1;
         const past = this.hpHistory[0]?.hp ?? this.maxHp * 0.3;
         this.hp = Math.max(1, past);
         this.say('回溯之痕：时间倒流两秒');
@@ -1078,50 +1343,31 @@ export class BattleSim {
       }
       if (this.phoenix) {
         this.phoenix = false;
+        this.saves += 1;
         this.hp = 1;
         this.enemies = this.enemies.filter((en) => en.required || en.elite);
         this.say('浴火凤命：留得一口气，清场');
         return;
       }
+    }
+    if (this.hp <= 0) {
       this.hp = 0;
       this.finish(false);
     }
   }
 
-  gainXp(n: number) {
-    this.xp += n;
-    this.totalXp += n;
-    while (this.xp >= this.levelNeed) {
-      this.xp -= this.levelNeed;
-      this.level += 1;
-      this.levelNeed = Math.round(this.levelNeed + 8);
-      this.pendingLevels += 1;
+  // 灵气球：给充能型主动法宝回格，聚灵葫每 10 枚白放一次
+  gainOrb() {
+    this.orbsGot += 1;
+    this.totalXp += 1;
+    if (this.orbsGot % ORBS_PER_CELL === 0) for (const a of this.actives) if (a.recharge && a.charge < a.cost) a.charge += 1;
+    if (this.passive.juling && this.orbsGot % 10 === 0) {
+      const pool = this.actives.map((a, i) => ({ a, i })).filter((x) => x.a.id !== 'dundi');
+      if (pool.length) {
+        this.proc('聚灵葫');
+        this.useActive(pool[Math.floor(rand() * pool.length)].i, true);
+      }
     }
-    if (this.pendingLevels > 0 && !this.levelUp && !this.done) this.openLevelUp();
-  }
-
-  openLevelUp() {
-    this.pendingLevels -= 1;
-    const opts: LevelChoice[] = [];
-    const up = this.skills.filter((s) => s.lvl < 5);
-    const ids: SkillId[] = ['sword', 'orbit', 'thunder', 'fire', 'frost', 'ink'];
-    const fresh = ids.filter((id) => !this.skills.some((s) => s.id === id));
-    const pool: LevelChoice[] = [];
-    for (const s of up) pool.push({ label: `${SKILL_LABEL[s.id]} → ${s.lvl + 1} 阶`, desc: SKILL_DESC[s.id], apply: () => (s.lvl += 1) });
-    if (this.skills.length < 4 && !this.mods.M24) for (const id of fresh) pool.push({ label: `新法宝：${SKILL_LABEL[id]}`, desc: SKILL_DESC[id], apply: () => this.skills.push({ id, lvl: 1 }) });
-    const n = this.spec.scholar ? 4 : 3;
-    while (opts.length < n && pool.length) opts.push(pool.splice(Math.floor(rand() * pool.length), 1)[0]);
-    opts.push({ label: '调息', desc: '回复 30% 气血', apply: () => this.heal(this.maxHp * 0.3) });
-    this.levelUp = opts.slice(0, Math.max(n, Math.min(opts.length, n)));
-    if (!this.levelUp.length) this.levelUp = null;
-  }
-
-  chooseLevel(i: number) {
-    if (!this.levelUp) return;
-    const o = this.levelUp[i] ?? this.levelUp[0];
-    o.apply();
-    this.levelUp = null;
-    if (this.pendingLevels > 0) this.openLevelUp();
   }
 
   checkEnd() {
@@ -1137,7 +1383,6 @@ export class BattleSim {
   finish(win: boolean, extra: Partial<BattleResult> = {}) {
     if (this.done) return;
     this.done = true;
-    this.levelUp = null;
     const downed = this.partners.filter((p) => p.down).map((p) => p.id);
     this.result = {
       win,
@@ -1155,6 +1400,12 @@ export class BattleSim {
       lordBeaten: false,
       cloneBeaten: this.cloneBeaten,
       lifeOrbs: this.lifeOrbs,
+      dmgBy: this.dmgBy,
+      procs: this.procs,
+      activeLeft: Object.fromEntries(this.actives.filter((a) => !a.recharge).map((a) => [a.uid, a.uses])),
+      amuletUsed: this.amuletUsed,
+      saves: this.saves,
+      orbs: this.orbsGot,
       ...extra,
     };
   }
@@ -1175,17 +1426,33 @@ export class BattleSim {
   }
 }
 
-// 模拟用的自动驾驶：远离最近敌人、躲劫雷预警，悟道选第一项
+// 自动用法宝：气血低于 35% 吃丹，敌群密集时扔符，弹幕逼近时开镜
+export function autoActives(b: BattleSim) {
+  if (b.done) return;
+  const near = (r: number) => b.enemies.filter((e) => e.hp > 0 && (e.x - b.px) ** 2 + (e.y - b.py) ** 2 < r * r).length;
+  b.actives.forEach((a, i) => {
+    if (!b.canUse(a) || (b.cds['act' + i] ?? 0) > b.t) return;
+    let go = false;
+    if (a.id === 'huichun') go = b.hp < b.maxHp * 0.35;
+    else if (a.id === 'leihuo') go = near(260) >= 9;
+    else if (a.id === 'dingshen') go = near(220) >= 10 || (b.hp < b.maxHp * 0.45 && near(150) >= 3);
+    else if (a.id === 'bagua') go = b.shots.filter((s) => s.enemy && (s.x - b.px) ** 2 + (s.y - b.py) ** 2 < 170 * 170).length >= 3;
+    else if (a.id === 'dundi') go = b.hp < b.maxHp * 0.12;
+    if (go) {
+      b.cds['act' + i] = b.t + 2;
+      b.useActive(i);
+    }
+  });
+}
+
+// 模拟用的自动驾驶：远离最近敌人、躲劫雷预警
 export function autoBattle(spec: BattleSpec, lordAssist?: BattleSim['lordAssist']): BattleResult {
   const b = new BattleSim(spec);
   if (lordAssist) b.lordAssist = lordAssist;
   const dt = 1 / 20;
   let guard = 0;
   while (!b.done && guard++ < 20 * 400) {
-    if (b.levelUp) {
-      b.chooseLevel(0);
-      continue;
-    }
+    autoActives(b);
     let mx = 0;
     let my = 0;
     for (const e of b.enemies) {
@@ -1245,4 +1512,35 @@ export function autoBattle(spec: BattleSpec, lordAssist?: BattleSim['lordAssist'
   }
   if (!b.done) b.finish(false);
   return b.result!;
+}
+
+// 出征页的估算秒伤：只看功法本身（层数 × 品阶 × 法宝 × 附诀），不含暴击与词条
+export function estDps(gong: BattleGong[], dmgScale: number): number {
+  let sum = 0;
+  for (const g of gong) {
+    const l = g.lvl;
+    const h = new Set(g.fj);
+    let cdm = (h.has('jushi') ? 1.3 : 1) * (h.has('jijue') ? 0.8 : 1);
+    let d = 0;
+    switch (g.id) {
+      case 'sword': d = ((1 + Math.floor(l / 2)) * (11 + 4 * l)) / (Math.max(0.35, 0.95 - 0.09 * l) * cdm); break;
+      case 'orbit': d = ((2 + l) * (7 + 3 * l) * 0.8) / (0.45 * cdm); break;
+      case 'thunder': d = ((22 + 9 * l) * 2.5) / (Math.max(0.8, 2.4 - 0.28 * l) * cdm); break;
+      case 'fire': d = ((9 + 5 * l) * 3 * 2) / (2.8 * cdm); break;
+      case 'frost': d = (10 + 5 * l) / (Math.max(0.5, 1.25 - 0.1 * l) * cdm); break;
+      case 'ink': d = (l * (16 + 4 * l)) / (2.4 * cdm); break;
+      case 'art': d = (3 * (12 + 6 * l) * 1.5) / (Math.max(0.6, 1.7 - 0.16 * l) * cdm); break;
+    }
+    const add = Math.min(FJ_ADD_CAP, (h.has('jushi') ? 0.6 : 0) - (h.has('jijue') ? 0.1 : 0));
+    d *= g.mul * (1 + add);
+    if (h.has('fenguang')) d *= 1.35;
+    if (h.has('lianzhu')) d *= 1.6;
+    if (h.has('chuanyun')) d *= 1.25;
+    if (h.has('huiying')) d *= 1.3;
+    if (h.has('shigu')) d *= 1.4;
+    if (h.has('guangyu')) d *= 1.2;
+    if (h.has('yinlei')) d *= 1.15;
+    sum += d;
+  }
+  return Math.round(sum * dmgScale);
 }

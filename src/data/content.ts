@@ -131,7 +131,7 @@ export const MUTATORS: Mutator[] = [
   { id: 'M21', name: '学究', trace: 'scholar', type: 'rule', kinds: 'BDT', pro: '悟道三选一变四选一', con: '经验 -10%' },
   { id: 'M22', name: '战场老兵', trace: 'soldier', type: 'rule', kinds: 'B', pro: '受到接触伤害 -15%', con: '不能布阵（老兵只信自己的刀）' },
   { id: 'M23', name: '回溯之痕', trace: 'rewound', type: 'rule', kinds: 'BDT', pro: '一次致命伤害时时间倒流 2 秒', con: '本场奖励 -20%' },
-  { id: 'M24', name: '轻装', trace: 'ascetic', type: 'rule', kinds: 'BDT', pro: '移动 +15%，少于 2 件时伤害 +15%', con: '不能获得新法宝（悟道只给升阶）' },
+  { id: 'M24', name: '轻装', trace: 'ascetic', type: 'rule', kinds: 'BDT', pro: '移动 +15%，功法少于 2 门时伤害 +15%', con: '灵气球 -20%' },
 ];
 
 // 心愿 W01～W40；check 在岁首与结算时调用

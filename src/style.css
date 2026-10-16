@@ -926,6 +926,118 @@ ul.inline {
   right: 14px;
   bottom: 14px;
 }
+.act-bar {
+  position: absolute;
+  right: 14px;
+  bottom: 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+.act-btn {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  border: 1px solid rgba(184, 146, 58, 0.7);
+  background: rgba(246, 250, 252, 0.92);
+  box-shadow: 0 4px 14px rgba(40, 50, 63, 0.18);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  cursor: pointer;
+  font-family: var(--brush, serif);
+  color: var(--ink);
+  padding: 0;
+}
+.act-btn b {
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 1.1;
+}
+.act-btn i {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-2);
+  font-family: var(--serif);
+}
+.act-btn u {
+  position: absolute;
+  top: -4px;
+  left: -2px;
+  text-decoration: none;
+  font-size: 11px;
+  background: var(--ink);
+  color: #fff;
+  border-radius: 8px;
+  padding: 0 5px;
+  font-family: var(--serif);
+}
+.act-btn.off {
+  opacity: 0.45;
+}
+.sk em {
+  position: absolute;
+  left: 2px;
+  top: 0;
+  font-size: 9px;
+  font-style: normal;
+  color: var(--gold);
+}
+.sk.weak {
+  border-color: rgba(176, 48, 48, 0.5);
+}
+.sk.idle {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+.orb-n {
+  align-self: center;
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-left: 4px;
+}
+.dmg-sum {
+  position: absolute;
+  left: 50%;
+  top: calc(40% + 70px);
+  transform: translateX(-50%);
+  width: min(320px, 86vw);
+  background: rgba(246, 250, 252, 0.94);
+  border: 1px solid rgba(28, 35, 44, 0.22);
+  border-radius: 3px;
+  padding: 8px 12px;
+  font-family: var(--serif);
+  font-size: 13px;
+}
+.dmg-sum h5 {
+  margin: 0 0 4px;
+  font-family: var(--brush, serif);
+  font-weight: 400;
+  font-size: 16px;
+}
+.ds-row {
+  display: grid;
+  grid-template-columns: 7em 1fr 3em;
+  align-items: center;
+  gap: 6px;
+}
+.ds-row i {
+  height: 6px;
+  background: var(--teal);
+  border-radius: 3px;
+}
+.ds-row b {
+  text-align: right;
+  font-weight: 400;
+}
+.dmg-sum p {
+  margin: 6px 0 0;
+  color: var(--ink-2);
+  font-size: 12px;
+}
 .level-up {
   position: absolute;
   left: 50%;
@@ -1399,4 +1511,147 @@ button,
   50% {
     opacity: 0.55;
   }
+}
+
+/* ---------- 修炼与法宝：行囊、功法 ---------- */
+.bag-root {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(29, 42, 56, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.bag-box {
+  background: var(--paper-2);
+  border: 1px solid rgba(184, 146, 58, 0.5);
+  border-radius: 3px;
+  box-shadow: 0 20px 60px rgba(29, 42, 56, 0.3);
+  padding: 16px 20px;
+  width: min(640px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  font-family: var(--serif);
+}
+.bag-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.bag-top h2 {
+  margin: 0;
+  font-family: var(--brush, serif);
+  font-weight: 400;
+  color: var(--blue);
+}
+.bag-top span {
+  flex: 1;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.bag-box h3 {
+  font-size: 15px;
+  color: var(--blue);
+  margin: 14px 0 6px;
+}
+.bag-gong {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 3px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+.bg-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.bg-head span,
+.bg-qi {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.bg-qi,
+.bg-fj {
+  margin-top: 4px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.bag-box select {
+  font: inherit;
+  font-size: 13px;
+  max-width: 100%;
+  padding: 2px 4px;
+}
+.fj {
+  border: 1px solid rgba(184, 146, 58, 0.6);
+  background: #fffaf0;
+  border-radius: 10px;
+  padding: 1px 8px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.bm {
+  font-style: normal;
+  font-size: 11px;
+  color: #fff;
+  background: var(--gold);
+  border-radius: 8px;
+  padding: 0 5px;
+  margin-left: 4px;
+}
+.warn {
+  color: var(--red, #b03030);
+}
+.bag-item {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 6px;
+  align-items: baseline;
+  padding: 4px 0;
+  font-size: 14px;
+}
+.bag-item small {
+  color: var(--ink-2);
+}
+.bag-item.on b {
+  color: var(--teal);
+}
+.bag-line {
+  font-size: 13px;
+  margin: 4px 0;
+}
+.bag-open {
+  margin: 4px 0 6px;
+}
+.gong-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gong-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  font-size: 13px;
+  gap: 0 6px;
+}
+.gong-row small {
+  grid-column: 1 / 3;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.gong-row span small {
+  grid-column: auto;
+}
+h4 .btn.sm {
+  float: right;
+  font-size: 12px;
+  padding: 1px 8px;
 }
