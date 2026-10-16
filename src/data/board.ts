@@ -3,14 +3,30 @@ import type { Effect, LifeState, Option } from '../game/types';
 import type { School } from './core';
 
 export const MONTHS = ['正月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '冬月', '腊月'];
-export const SLOT_START = 0;
-export const SLOT_FATE = 3;
-export const SLOT_HOLD_A = 5;
-export const SLOT_MARKET = 6;
-export const SLOT_ORACLE = 9;
-export const SLOT_HOLD_B = 11;
-export const FLOW_SLOTS = [1, 2, 4, 7, 8, 10];
-export const MAX_STOPS = 5;
+export const SOLAR_TERMS = ['立春', '雨水', '惊蛰', '春分', '清明', '谷雨', '立夏', '小满', '芒种', '夏至', '小暑', '大暑', '立秋', '处暑', '白露', '秋分', '寒露', '霜降', '立冬', '小雪', '大雪', '冬至', '小寒', '大寒'];
+// 棋盘随年龄与境界分四档变大：走得越远，路上的事越多
+export const BOARD_STAGES = [
+  { size: 12, name: '乡里', maxStops: 5, text: '' },
+  { size: 16, name: '一州', maxStops: 6, text: '你走出了生你的那片乡里，命途棋盘扩到十六格。' },
+  { size: 20, name: '一域', maxStops: 6, text: '金丹之后，御剑一日千里，命途棋盘扩到二十格。' },
+  { size: 24, name: '天下', maxStops: 7, text: '化神之身，九州不过一步，命途棋盘扩到二十四格。' },
+];
+export const boardStageOf = (L: { inDao: boolean; realm: number; age: number }) => (L.inDao ? (L.realm <= 2 ? 1 : L.realm <= 4 ? 2 : 3) : L.age < 16 ? 0 : 1);
+// 四角：岁首、本命格、市、天机；两处产业格；其余是流年格
+export function boardLayout(n: number) {
+  const side = n / 4;
+  const start = 0;
+  const fate = side;
+  const holdA = 2 * side - 1;
+  const market = 2 * side;
+  const oracle = 3 * side;
+  const holdB = n - 1;
+  const fixed = [start, fate, holdA, market, oracle, holdB];
+  const flow: number[] = [];
+  for (let i = 0; i < n; i++) if (!fixed.includes(i)) flow.push(i);
+  return { n, start, fate, holdA, market, oracle, holdB, flow };
+}
+export const tileMonth = (slot: number, n: number) => (n === 12 ? MONTHS[slot] : SOLAR_TERMS[Math.round((slot * 24) / n) % 24]);
 // 固定在角上的地点，不进流年格
 export const CORNER_LOCS = ['cave', 'bazaar', 'fair', 'market'];
 

@@ -309,5 +309,5 @@ export interface MetaState {
   recentChoices?: string[][]; // 最近两世见过的抉择（跨世冷却）
   fates?: string[]; // 见过的命格
   legacies?: Legacy[]; // 前世产业留下的遗迹
-  settings: { tendency: Tendency; speed: number };
+  settings: { tendency: Tendency; speed: number; autoRoll?: boolean };
 }

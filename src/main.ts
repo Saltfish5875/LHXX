@@ -188,9 +188,38 @@ const ATTR_DESC: Record<AttrKey, string> = { gen: '寿元、气血、凡间存�
 
 // ---------------- 命途棋盘 ----------------
 const TAG_CLASS: Record<string, string> = { 劫: 'tag-jie', 缘: 'tag-yuan', 凶: 'tag-xiong', 平: 'tag-ping', 引: 'tag-yin', 故: 'tag-gu' };
-// 十二格绕成一圈：左上角是岁首，顺时针
-const RING: [number, number][] = [[1, 1], [1, 2], [1, 3], [1, 4], [2, 4], [3, 4], [4, 4], [4, 3], [4, 2], [4, 1], [3, 1], [2, 1]];
+// 一圈格子绕成方环：左上角是岁首，顺时针。12/16/20/24 格 = 4/5/6/7 宫
+function ringOf(n: number): [number, number][] {
+  const k = n / 4 + 1;
+  const out: [number, number][] = [];
+  for (let c = 1; c <= k; c++) out.push([1, c]);
+  for (let r = 2; r <= k; r++) out.push([r, k]);
+  for (let c = k - 1; c >= 1; c--) out.push([k, c]);
+  for (let r = k - 1; r >= 2; r--) out.push([r, 1]);
+  return out;
+}
+// 骰面：九宫格里的点位，一点、四点用朱红（民间骰子的样子）
+const PIP_POS: Record<number, number[]> = { 1: [5], 2: [3, 7], 3: [3, 5, 7], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
+function dieFace(f: number): string {
+  if (f < 1 || f > 6) return `<span class="d-char">${faceName(f)}</span>`;
+  const red = f === 1 || f === 4 ? ' red' : '';
+  return PIP_POS[f].map((p) => `<i class="pip${red}" style="grid-area:${Math.ceil(p / 3)}/${((p - 1) % 3) + 1}"></i>`).join('');
+}
 const AUTO_KEYS = new Set(['oracle', 'hold', 'build', 'holdBranch']);
+let lastRollAct: RollAction['action'] | null = null;
+// 上一次落子的格子与结算出来的简略结果（下一次摆盘时冒在那一格上）
+let landed: { life: number; size: number; slot: number; tip?: { chips: Chip[]; caption: string | null } } | null = null;
+function tileTip(v: RollView, ring: [number, number][]): string {
+  const l = landed;
+  if (!l || l.life !== game.L.lifeNo || l.size !== v.size || !l.tip || l.slot >= v.size) return '';
+  const { chips, caption } = l.tip;
+  l.tip = undefined;
+  const body = chips.length ? chips.map((c) => `<span class="${c.tone}">${esc(c.text)}</span>`).join('') : caption ? `<span class="neutral">${esc(caption.length > 9 ? caption.slice(0, 8) + '…' : caption)}</span>` : '';
+  if (!body) return '';
+  const [r, c] = ring[l.slot];
+  return `<div class="tile-tip${r === 1 ? ' below' : ''}" style="grid-area:${r}/${c};animation-delay:-{D}ms">${body}</div>`;
+}
+let shownDice = '';
 
 async function roll(v: RollView): Promise<RollAction> {
   settle();
@@ -198,22 +227,45 @@ async function roll(v: RollView): Promise<RollAction> {
   setMomentSpeed(auto ? meta.settings.speed * 1.6 : 1);
   const danger = v.gathered ? 1 : v.tiles.some((t) => t.tag === '劫') ? 0.4 : v.tiles.some((t) => t.tag === '凶') ? 0.3 : 0;
   scene.set({ mode: 'life', danger });
+  const key = `${game.L.lifeNo}|${v.lap}|${v.stops}|${v.dice.join(',')}`;
+  // 掷过的骰子（窥命之后回来）直接亮出；重掷的、勾了自动摇的，自己滚
+  let rolled = key === shownDice;
+  const autoTumble = !rolled && (lastRollAct === 'reroll' || auto || !!meta.settings.autoRoll);
   return new Promise((resolve) => {
     let peekMode = false;
     let ruyiMode = false;
     let focus: number | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let going = false;
-    const targetName = (slot: number) => (slot >= 12 ? '过岁首' : slot === v.pos ? '原地' : v.tiles[slot].name);
-    const ruyiTargets = [1, 2, 3, 4, 5, 6].map((n) => Math.min(12, v.pos + n));
+    let tumbling = false;
+    const n = v.size;
+    const ring = ringOf(n);
+    const k = n / 4 + 1;
+    const targetName = (slot: number) => (slot >= n ? '过岁首' : slot === v.pos ? '原地' : v.tiles[slot].name);
+    const ruyiTargets = [1, 2, 3, 4, 5, 6].map((d) => Math.min(n, v.pos + d));
+    const tip = tileTip(v, ring);
+    const tip0 = performance.now();
+    // 小结果停留约 2.6 秒；期间重绘（掷骰、点格）接着原来的进度淡出
+    const tipHtml = () => {
+      const el = performance.now() - tip0;
+      return tip && el < 2600 ? tip.replace('{D}', String(Math.round(el))) : '';
+    };
+    const diceHtml = () => {
+      if (ruyiMode) return ruyiTargets.map((s, i) => `<button class="die-btn ruyi" data-r="${i + 1}"><span class="die">${dieFace(i + 1)}</span><small>${esc(targetName(s))}</small></button>`).join('');
+      if (!rolled) return `<button class="roll-btn" data-a="roll">${v.dice.map((_, i) => `<span class="die blank" style="--i:${i}">${dieFace(randFace())}</span>`).join('')}<b>掷 骰</b></button>`;
+      return v.dice
+        .map((d, i) => `<button class="die-btn${d === 0 ? ' f-stop' : d === 7 ? ' f-dun' : d === -1 ? ' f-jie' : ''}" data-d="${i}" style="--i:${i}"><span class="die">${dieFace(d)}</span><small>${esc(targetName(v.targets[i]))}</small></button>`)
+        .join('');
+    };
     const render = () => {
-      const targets = ruyiMode ? ruyiTargets : v.targets;
+      const targets = ruyiMode ? ruyiTargets : rolled ? v.targets : [];
       const info = focus !== null ? v.tiles[focus] : null;
       dealEl.innerHTML = `
-        <div class="board${v.gathered ? ' gathered' : ''}${peekMode ? ' peeking' : ''}">
+        <div class="board s${k}${v.gathered ? ' gathered' : ''}${peekMode ? ' peeking' : ''}" style="--k:${k}">
+          ${tipHtml()}
           ${v.tiles
             .map((t) => {
-              const [r, c] = RING[t.slot];
+              const [r, c] = ring[t.slot];
               const cls = [
                 'tile',
                 `k-${t.kind}`,
@@ -235,7 +287,7 @@ async function roll(v: RollView): Promise<RollAction> {
             })
             .join('')}
           <div class="board-center">
-            <div class="sign${v.gathered ? ' gathered' : ''}">${esc(v.sign)}</div>
+            <div class="sign${v.gathered ? ' gathered' : ''}"><span>${esc(v.sign)}</span></div>
             <div class="b-info">${
               info
                 ? `<b>${esc(info.name)}</b> ${esc(info.peek ? '窥得：' + info.peek : info.hint)}`
@@ -243,32 +295,35 @@ async function roll(v: RollView): Promise<RollAction> {
                   ? '点一格地点，窥它这一圈会发生什么'
                   : ruyiMode
                     ? '如意骰：任选点数'
-                    : `第 ${v.lap + 1} 圈 · 一圈 ${v.years} 年 · 已停 ${v.stops}/${v.maxStops}`
+                    : `${v.stageName} · 第 ${v.lap + 1} 圈 · 一圈 ${v.years} 年 · 已停 ${v.stops}/${v.maxStops}`
             }</div>
-            <div class="dice">${
-              ruyiMode
-                ? ruyiTargets.map((s, i) => `<button class="die ruyi" data-r="${i + 1}"><b>${i + 1}</b><small>${esc(targetName(s))}</small></button>`).join('')
-                : v.dice
-                    .map((d, i) => `<button class="die${d === 0 ? ' f-stop' : d === 7 ? ' f-dun' : d === -1 ? ' f-jie' : ''}" data-d="${i}" style="--i:${i}"><b>${faceName(d)}</b><small>${esc(targetName(v.targets[i]))}</small></button>`)
-                    .join('')
-            }</div>
+            <div class="dice">${diceHtml()}</div>
           </div>
         </div>
         <div class="deal-actions">
-          <button class="btn" data-a="reroll" ${v.rerolls <= 0 ? 'disabled' : ''}>改命·重掷（${v.rerolls}）</button>
+          <button class="btn" data-a="reroll" ${v.rerolls <= 0 || !rolled ? 'disabled' : ''}>改命·重掷（${v.rerolls}）</button>
           <button class="btn ${peekMode ? 'active' : ''}" data-a="peek" ${v.rerolls <= 0 ? 'disabled' : ''}>改命·窥命</button>
           ${v.ruyi > 0 ? `<button class="btn ${ruyiMode ? 'active' : ''}" data-a="ruyi">如意骰（${v.ruyi}）</button>` : ''}
           ${v.canRewind ? '<button class="btn" data-a="rewind">掌天瓶·回溯</button>' : ''}
+          <label class="btn chk"><input type="checkbox" data-a="autoroll" ${meta.settings.autoRoll ? 'checked' : ''}>自动摇</label>
           <button class="btn ${auto ? 'active' : ''}" data-a="auto">${auto ? '自动中' : '自动'}（${TEND_NAMES[meta.settings.tendency]}）</button>
         </div>`;
       dealEl.querySelectorAll<HTMLButtonElement>('.tile').forEach((b) => (b.onclick = () => tapTile(Number(b.dataset.s))));
-      dealEl.querySelectorAll<HTMLButtonElement>('.die[data-d]').forEach((b) => (b.onclick = () => go(Number(b.dataset.d))));
-      dealEl.querySelectorAll<HTMLButtonElement>('.die[data-r]').forEach((b) => (b.onclick = () => go(-1, Number(b.dataset.r))));
-      dealEl.querySelectorAll<HTMLButtonElement>('[data-a]').forEach((b) => {
+      dealEl.querySelectorAll<HTMLButtonElement>('.die-btn[data-d]').forEach((b) => (b.onclick = () => go(Number(b.dataset.d))));
+      dealEl.querySelectorAll<HTMLButtonElement>('.die-btn[data-r]').forEach((b) => (b.onclick = () => go(-1, Number(b.dataset.r))));
+      const ar = dealEl.querySelector<HTMLInputElement>('input[data-a="autoroll"]');
+      if (ar)
+        ar.onchange = () => {
+          meta.settings.autoRoll = ar.checked;
+          saveMeta(meta);
+          if (ar.checked && !rolled) void tumble();
+        };
+      dealEl.querySelectorAll<HTMLButtonElement>('button[data-a]').forEach((b) => {
         b.onclick = () => {
           const a = b.dataset.a;
           sfx.tap();
-          if (a === 'reroll') finish({ action: 'reroll' });
+          if (a === 'roll') void tumble();
+          else if (a === 'reroll') finish({ action: 'reroll' });
           else if (a === 'peek') {
             peekMode = !peekMode;
             ruyiMode = false;
@@ -286,17 +341,43 @@ async function roll(v: RollView): Promise<RollAction> {
         };
       });
     };
+    // 掷骰：骰子在盘心翻滚一阵，再定下点数
+    async function tumble() {
+      if (rolled || tumbling) return;
+      tumbling = true;
+      peekMode = false;
+      ruyiMode = false;
+      const box = dealEl.querySelector('.dice');
+      if (box) {
+        box.innerHTML = v.dice.map((_, i) => `<span class="die-btn"><span class="die rolling" style="--i:${i}">${dieFace(randFace())}</span><small>&nbsp;</small></span>`).join('');
+        const els = [...box.querySelectorAll<HTMLElement>('.die')];
+        const t0 = performance.now();
+        const dur = auto ? 260 / meta.settings.speed : 620;
+        while (performance.now() - t0 < dur) {
+          els.forEach((el) => (el.innerHTML = dieFace(randFace())));
+          sfx.tap();
+          await sleep(auto ? 50 : 85);
+        }
+      }
+      rolled = true;
+      tumbling = false;
+      shownDice = key;
+      render();
+      dealEl.querySelectorAll('.die-btn .die').forEach((el) => el.classList.add('landed'));
+      sfx.pluck(3, 0.35);
+      if (auto) scheduleAuto();
+    }
     const tapTile = (slot: number) => {
-      if (going) return;
+      if (going || tumbling) return;
       const t = v.tiles[slot];
       if (peekMode) {
         if (t.canPeek) finish({ action: 'peek', slot });
         return;
       }
       if (ruyiMode) {
-        const n = ruyiTargets.indexOf(slot);
-        if (n >= 0 && slot !== v.pos) return go(-1, n + 1);
-      } else {
+        const i = ruyiTargets.indexOf(slot);
+        if (i >= 0 && slot !== v.pos) return go(-1, i + 1);
+      } else if (rolled) {
         const i = v.targets.indexOf(slot);
         if (i >= 0 && slot !== v.pos && focus === slot) return go(i);
       }
@@ -305,7 +386,7 @@ async function roll(v: RollView): Promise<RollAction> {
     };
     // 落子：棋子一格一格走过去，再盖「定」字
     const go = async (die: number, ruyi?: number) => {
-      if (going) return;
+      if (going || tumbling || (!ruyi && !rolled)) return;
       going = true;
       const to = ruyi ? ruyiTargets[ruyi - 1] : v.targets[die];
       const face = ruyi ?? v.dice[die];
@@ -313,13 +394,14 @@ async function roll(v: RollView): Promise<RollAction> {
       clearOutcome();
       const tiles = [...dealEl.querySelectorAll<HTMLButtonElement>('.tile')];
       const step = auto ? 50 / meta.settings.speed : 110;
-      for (let s = v.pos + 1; s <= Math.min(to, 11); s++) {
+      for (let s = v.pos + 1; s <= Math.min(to, n - 1); s++) {
         tiles.forEach((el) => el.classList.remove('here'));
         tiles[s]?.classList.add('here', 'passing');
         await sleep(step);
       }
       const act: RollAction = ruyi ? { action: 'ruyi', value: ruyi } : { action: 'go', die };
-      if (to < 12 && to !== v.pos) {
+      landed = to < n && to !== v.pos ? { life: game.L.lifeNo, size: n, slot: to } : null;
+      if (to < n && to !== v.pos) {
         const t = v.tiles[to];
         await stampCard([tiles[to]], 0, auto);
         sweep(sceneHost);
@@ -330,20 +412,27 @@ async function roll(v: RollView): Promise<RollAction> {
     };
     const onKey = (e: KeyboardEvent) => {
       if (modalEl.classList.contains('show') || battleEl.classList.contains('show')) return;
-      const n = Number(e.key) - 1;
-      if (ruyiMode && n >= 0 && n < 6) go(-1, n + 1);
-      else if (n >= 0 && n < v.dice.length) go(n);
+      if ((e.key === ' ' || e.key === 'Enter') && !rolled) {
+        e.preventDefault();
+        void tumble();
+        return;
+      }
+      const d = Number(e.key) - 1;
+      if (ruyiMode && d >= 0 && d < 6) go(-1, d + 1);
+      else if (d >= 0 && d < v.dice.length) go(d);
     };
     window.addEventListener('keydown', onKey);
     function finish(a: RollAction) {
       if (timer) clearTimeout(timer);
       window.removeEventListener('keydown', onKey);
+      lastRollAct = a.action;
       dealEl.innerHTML = '';
       resolve(a);
     }
     function scheduleAuto() {
+      if (!rolled) return void tumble();
       const L = game.L;
-      const reach = v.targets.filter((s) => s < 12).map((s) => v.tiles[s]);
+      const reach = v.targets.filter((s) => s < n).map((s) => v.tiles[s]);
       const lowHp = L.hp < L.maxHp * 0.3 && reach.some((t) => t.tag === '劫');
       const story = reach.find((t) => t.tag === '引' || t.tag === '故' || t.kind === 'ruin');
       if ((v.gathered && v.stops === 0) || lowHp || story) {
@@ -357,9 +446,11 @@ async function roll(v: RollView): Promise<RollAction> {
       }, 380 / meta.settings.speed);
     }
     render();
-    if (auto) scheduleAuto();
+    if (autoTumble) void tumble();
+    else if (auto) scheduleAuto();
   });
 }
+const randFace = () => 1 + Math.floor(Math.random() * 6);
 
 const TEND_NAMES: Record<Tendency, string> = { safe: '稳健', chance: '求缘', war: '好战' };
 
@@ -458,6 +549,8 @@ function settle() {
   let line = p.caption;
   if (line && line.length > 46) line = line.slice(0, 45) + '…';
   showOutcome(sceneHost, line, chips, auto ? meta.settings.speed * 1.6 : 1);
+  // 棋盘上落子的那一格，冒一个简略结果
+  if (landed) landed.tip = { chips: chips.slice(0, 3), caption: line };
 }
 
 // ---------------- 卷轴与面板 ----------------

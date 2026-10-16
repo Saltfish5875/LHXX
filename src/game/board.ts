@@ -7,9 +7,9 @@ import { FATE_BY_ID, FATE_EVENTS } from '../data/fate';
 import { ERA_BY_ID, HOOK_BY_ID, eraIndex } from '../data/faces';
 import { SCHOOL_NAMES, School, TALENT_BY_ID } from '../data/core';
 import {
-  CONSEQ, CORNER_LOCS, FATE_TILES, FLOW_SLOTS, HOLDINGS, HOLD_COST_CULT, HOLD_COST_MORTAL, MAX_STOPS, MONTHS, ORACLE_SIGNS,
+  BOARD_STAGES, CONSEQ, CORNER_LOCS, FATE_TILES, HOLDINGS, HOLD_COST_CULT, HOLD_COST_MORTAL, ORACLE_SIGNS,
   RUINS, RUIN_FAIL, RUIN_FORM_MULT, RUIN_FORM_NAMES, RUIN_GREET, RUIN_LAYERS, RUIN_REALM_COEF, RUIN_REVIVE, STRAYS,
-  SLOT_FATE, SLOT_HOLD_A, SLOT_HOLD_B, SLOT_MARKET, SLOT_ORACLE, SLOT_START,
+  boardLayout, boardStageOf, tileMonth,
 } from '../data/board';
 import { chance, pick, randInt, shuffle, weighted } from './rng';
 
@@ -40,7 +40,9 @@ export interface RollView {
   tiles: TileView[];
   pos: number;
   dice: number[]; // 0 = 止，7 = 遁，-1 = 劫
-  targets: number[]; // 每颗骰落到的格；12 = 越过岁首，本圈结束
+  targets: number[]; // 每颗骰落到的格；= size 表示越过岁首，本圈结束
+  size: number; // 棋盘格数 12/16/20/24
+  stageName: string;
   stops: number;
   maxStops: number;
   rerolls: number;
@@ -69,15 +71,39 @@ export function ensureBoard(g: Game) {
     L.dice = { n: Math.min(3, 1 + extra), stopFace: false, dunFace: false, ruyi: 0 };
   }
   if (L.board) return;
+  L.board = { tiles: makeTiles(BOARD_STAGES[boardStageOf(L)].size), pos: 0, lap: 0, stops: 0, visited: [], seenLoc: {}, gathered: false, stage: stageOf(L) };
+}
+
+function makeTiles(n: number): Tile[] {
+  const Y = boardLayout(n);
   const tiles: Tile[] = [];
-  for (let s = 0; s < 12; s++) tiles.push({ slot: s, kind: 'loc', ttl: 0 });
-  tiles[SLOT_START] = { slot: SLOT_START, kind: 'start', ttl: 99 };
-  tiles[SLOT_FATE] = { slot: SLOT_FATE, kind: 'fate', ttl: 99 };
-  tiles[SLOT_HOLD_A] = { slot: SLOT_HOLD_A, kind: 'hold', ttl: 99 };
-  tiles[SLOT_MARKET] = { slot: SLOT_MARKET, kind: 'market', ttl: 99 };
-  tiles[SLOT_ORACLE] = { slot: SLOT_ORACLE, kind: 'oracle', ttl: 99 };
-  tiles[SLOT_HOLD_B] = { slot: SLOT_HOLD_B, kind: 'hold', ttl: 99 };
-  L.board = { tiles, pos: 0, lap: 0, stops: 0, visited: [], seenLoc: {}, gathered: false, stage: stageOf(L) };
+  for (let s = 0; s < n; s++) tiles.push({ slot: s, kind: 'loc', ttl: 0 });
+  tiles[Y.start] = { slot: Y.start, kind: 'start', ttl: 99 };
+  tiles[Y.fate] = { slot: Y.fate, kind: 'fate', ttl: 99 };
+  tiles[Y.holdA] = { slot: Y.holdA, kind: 'hold', ttl: 99 };
+  tiles[Y.market] = { slot: Y.market, kind: 'market', ttl: 99 };
+  tiles[Y.oracle] = { slot: Y.oracle, kind: 'oracle', ttl: 99 };
+  tiles[Y.holdB] = { slot: Y.holdB, kind: 'hold', ttl: 99 };
+  return tiles;
+}
+
+// 年龄、境界上去了：棋盘扩一档。旧的流年格带过去，产业跟着搬
+function growBoard(g: Game, n: number) {
+  const L = g.L;
+  const B = L.board!;
+  const oldN = B.tiles.length;
+  const O = boardLayout(oldN);
+  const Y = boardLayout(n);
+  const tiles = makeTiles(n);
+  O.flow.forEach((s, i) => {
+    const t = B.tiles[s];
+    const ns = Y.flow[i];
+    if (ns !== undefined && t.ttl > 0) tiles[ns] = { ...t, slot: ns };
+  });
+  for (const h of L.holdings ?? []) h.slot = h.slot === O.holdA ? Y.holdA : Y.holdB;
+  B.tiles = tiles;
+  const st = BOARD_STAGES.find((x) => x.size === n)!;
+  if (st.text) g.log(st.text, 'milestone');
 }
 
 // ================= 岁首 =================
@@ -90,6 +116,8 @@ function newYearBoard(g: Game) {
     full = true;
     flipStage(g);
   }
+  const size = BOARD_STAGES[boardStageOf(L)].size;
+  if (size > B.tiles.length) growBoard(g, size);
   refreshTiles(g, full);
   markTags(g);
   g.log(signText(g), 'fate');
@@ -124,7 +152,7 @@ function refreshTiles(g: Game, full: boolean) {
   const L = g.L;
   const M = g.M;
   const B = L.board!;
-  const flow = FLOW_SLOTS.map((s) => B.tiles[s]);
+  const flow = boardLayout(B.tiles.length).flow.map((s) => B.tiles[s]);
   for (const t of flow) t.ttl -= 1;
   const isHook = (t: Tile) => t.kind === 'loc' && t.tag === '引';
   const stage = stageOf(L);
@@ -208,7 +236,10 @@ function markTags(g: Game) {
   const B = L.board!;
   B.gathered = L.inDao && L.calm >= 6;
   const era = ERA_BY_ID[L.era ?? 'E1'];
-  for (const t of B.tiles) {
+  // 棋盘再大，平常年份的劫格也就两三处
+  const maxJie = B.tiles.length >= 20 ? 3 : 2;
+  let jie = 0;
+  for (const t of shuffleTiles(B.tiles)) {
     if (t.kind === 'hold') {
       t.tag = holdingAt(L, t.slot) && chance(B.gathered ? 0.3 : 0.04) ? '劫' : undefined;
       continue;
@@ -216,12 +247,15 @@ function markTags(g: Game) {
     if (t.kind !== 'loc' || !t.loc || t.tag === '引' || t.tag === '故') continue;
     const d = LOC_BY_ID[t.loc];
     t.peeked = undefined;
-    if (d.danger && L.inDao) t.tag = B.gathered || chance(0.35 + (era?.calamityBoost ?? 0)) ? '劫' : '平';
+    if (d.danger && L.inDao) t.tag = B.gathered || (jie < maxJie && chance(0.35 + (era?.calamityBoost ?? 0))) ? '劫' : '平';
+    if (t.tag === '劫') jie += 1;
     else if (d.fatal && !L.inDao) t.tag = !B.tiles.some((x) => x.tag === '凶') && chance(0.1) ? '凶' : '平';
     else if (d.chance) t.tag = chance(L.attrs.luck >= 7 ? 0.8 : 0.6) ? '缘' : '平';
     else t.tag = !B.gathered && chance(0.08 + L.attrs.luck * 0.01) ? '缘' : '平';
   }
 }
+
+const shuffleTiles = (ts: Tile[]) => shuffle(ts);
 
 export function signText(g: Game): string {
   const B = g.L.board!;
@@ -314,24 +348,25 @@ function rollDice(g: Game): number[] {
 }
 
 interface Dest {
-  slot: number; // 落点（12 = 越过岁首）
+  slot: number; // 落点（= 格数表示越过岁首）
   stop?: boolean;
 }
 function dest(g: Game, pos: number, face: number): Dest {
   const B = g.L.board!;
+  const n = B.tiles.length;
   if (face === STOP) return { slot: pos, stop: true };
   if (face === DUN) {
-    for (let s = pos + 1; s < 12; s++) {
+    for (let s = pos + 1; s < n; s++) {
       const t = B.tiles[s];
       if (t.tag === '缘' || t.tag === '引' || t.tag === '故' || t.kind === 'ruin') return { slot: s };
     }
-    return { slot: Math.min(12, pos + 6) };
+    return { slot: Math.min(n, pos + 6) };
   }
   if (face === JIE) {
-    for (let s = pos + 1; s < 12; s++) if (B.tiles[s].tag === '劫') return { slot: s };
+    for (let s = pos + 1; s < n; s++) if (B.tiles[s].tag === '劫') return { slot: s };
     return { slot: pos + 1 };
   }
-  return { slot: Math.min(12, pos + face) };
+  return { slot: Math.min(n, pos + face) };
 }
 
 export function canRewind(g: Game) {
@@ -351,7 +386,9 @@ function view(g: Game, dice: number[]): RollView {
     dice,
     targets: dice.map((d) => dest(g, B.pos, d).slot),
     stops: B.stops,
-    maxStops: MAX_STOPS,
+    maxStops: maxStops(B.tiles.length),
+    size: B.tiles.length,
+    stageName: BOARD_STAGES.find((x) => x.size === B.tiles.length)?.name ?? '',
     rerolls: g.rerolls,
     canRewind: canRewind(g),
     ruyi: L.dice!.ruyi,
@@ -359,6 +396,8 @@ function view(g: Game, dice: number[]): RollView {
     years: g.step,
   };
 }
+
+const maxStops = (n: number) => BOARD_STAGES.find((x) => x.size === n)?.maxStops ?? 5;
 
 // ================= 一圈 =================
 export async function boardLap(g: Game) {
@@ -376,7 +415,7 @@ export async function boardLap(g: Game) {
   let badLuck = g.tflag('badLuck');
   let dice = rollDice(g);
   for (;;) {
-    if (B.stops >= MAX_STOPS) {
+    if (B.stops >= maxStops(B.tiles.length)) {
       g.log('这一年东奔西走，停了太多处，岁末匆匆，没顾上修行。');
       L.flags.busyLap = 1;
       break;
@@ -393,7 +432,7 @@ export async function boardLap(g: Game) {
       // 霉运缠身：每圈第一次改命，必有一颗骰指向劫或凶
       if (badLuck) {
         badLuck = false;
-        for (let s = B.pos + 1; s <= Math.min(11, B.pos + 6); s++) {
+        for (let s = B.pos + 1; s <= Math.min(B.tiles.length - 1, B.pos + 6); s++) {
           if (B.tiles[s].tag === '劫' || B.tiles[s].tag === '凶') {
             dice[0] = s - B.pos;
             break;
@@ -427,7 +466,7 @@ export async function boardLap(g: Game) {
     // 劫格拦路：经过（没停下）的劫格，可能把你拦下
     let to = d.slot;
     if (face !== DUN) {
-      for (let s = B.pos + 1; s < Math.min(12, to); s++) {
+      for (let s = B.pos + 1; s < Math.min(B.tiles.length, to); s++) {
         if (B.tiles[s].tag === '劫' && chance(B.gathered ? 0.1 : 0.02)) {
           g.log(`路过${tileFace(g, B.tiles[s]).name}，劫气拦住了你的去路。`, 'battle');
           to = s;
@@ -435,8 +474,8 @@ export async function boardLap(g: Game) {
         }
       }
     }
-    if (to >= 12) {
-      if (to === 12 && pos12Lands(B.pos, face)) {
+    if (to >= B.tiles.length) {
+      if (to === B.tiles.length && landsOnStart(B.pos, face, B.tiles.length)) {
         B.pos = 0;
         B.stops += 1;
         fought = (await landStart(g)) || fought;
@@ -462,9 +501,9 @@ export async function boardLap(g: Game) {
   endLap(g, fought);
 }
 
-// 正好走到 12 = 停在岁首
-function pos12Lands(pos: number, face: number) {
-  return face !== DUN && face !== JIE && pos + face === 12;
+// 正好走满一圈 = 停在岁首
+function landsOnStart(pos: number, face: number, n: number) {
+  return face !== DUN && face !== JIE && pos + face === n;
 }
 
 function endLap(g: Game, fought: boolean) {
@@ -1048,7 +1087,7 @@ function tileView(g: Game, t: Tile): TileView {
     hint: f.hint,
     ttl: t.ttl,
     lv,
-    month: MONTHS[t.slot],
+    month: tileMonth(t.slot, L.board!.tiles.length),
     peek,
     visited: L.board!.visited.includes(t.slot),
     loc: t.loc,
@@ -1070,7 +1109,7 @@ const TAG_SCORE: Record<Tendency, Record<string, number>> = {
   war: { 平: 0.5, 缘: 1.5, 劫: 3, 凶: -2, 引: 2.5, 故: 2.5 },
 };
 export function tileScore(v: RollView, slot: number, tend: Tendency, L: LifeState): number {
-  if (slot >= 12) return 0.3;
+  if (slot >= v.size) return 0.3;
   if (slot === v.pos) return L.hp < L.maxHp * 0.35 ? 2 : 0.2; // 止
   const t = v.tiles[slot];
   const low = L.hp < L.maxHp * 0.35;

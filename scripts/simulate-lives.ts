@@ -118,7 +118,7 @@ async function run(tend: Tendency): Promise<Stats> {
       st.cardsFace += tiles.filter((t) => t.tag === '引' || t.tag === '故').length;
       const die = autoDie(v, tend, L, rand);
       const to = v.targets[die];
-      if (to < 12 && to !== v.pos) {
+      if (to < v.size && to !== v.pos) {
         st.stops += 1;
         const t = v.tiles[to];
         const k = t.kind === 'loc' ? `loc:${t.tag ?? '平'}` : t.kind;
