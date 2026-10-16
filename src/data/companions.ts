@@ -95,7 +95,7 @@ export const BOND_EVENTS: BondEvent[] = [
   { comp: 'danzun', n: 4, title: '门前旧事', text: '他讲飞升曾是常事，讲到一半睡着了。', cond: r(3), options: [{ label: '等他醒', desc: '年龄 +1', eff: { age: 1 } }] },
   { comp: 'danzun', n: 5, title: '丹火不灭', text: '他的丹火烧着三千年没灭，他说是为一个人留的。', cond: r(4), options: [{ label: '问是谁', eff: {} }, { label: '不问', eff: {} }] },
   { comp: 'danzun', n: 6, title: '求药', text: '他可以炼一炉回天丹，但要你一件法宝入炉。', cond: r(2), options: [
-    { label: '给', desc: '失去一件法宝的一阶', eff: { flag: 'loseSkill', merit: 30 } },
+    { label: '给', desc: '交出一件法宝（没有就功法退一层）', eff: { flag: 'loseSkill', merit: 30 } },
     { label: '不给', eff: {}, lamp: false },
   ] },
   { comp: 'danzun', n: 7, title: '徒儿们', text: '他念出当年送出画的徒儿名字，念到最后一个停住了。', cond: r(1), options: [{ label: '追问', eff: {} }, { label: '不追问', eff: {} }] },
@@ -108,7 +108,7 @@ export const BOND_EVENTS: BondEvent[] = [
     { label: '卖掉', desc: '灵石 +80', eff: { stones: 80 }, lamp: false },
   ] },
   { comp: 'bottle', n: 2, title: '滴水', text: '瓶中凝出一滴水。', cond: (L, M) => r(4)(L) && vol(2)(L, M), options: [
-    { label: '饮下', desc: '所有法宝升一阶', eff: { flag: 'allUp' } },
+    { label: '饮下', desc: '所有功法 +1 层', eff: { flag: 'allUp' } },
     { label: '留着', eff: {} },
   ] },
   // 第 3 段「死前一刻」在死亡时自动触发

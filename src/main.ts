@@ -5,6 +5,9 @@ import { RollAction, RollView, autoDie, faceName, tileSceneLoc } from './game/bo
 import { HOLDINGS } from './data/board';
 import { loadLife, loadMeta, resetAll, saveMeta, lampOf } from './game/meta';
 import { runBattle } from './battle/view';
+import { openBag } from './bag';
+import { bookEntries, dizhun, enemyMul, gongLine, identityLine, identityOpen } from './game/cult';
+import { ACHIEVEMENTS, GONGFA, GF_GRADES, IDENTITIES, TIER_NAMES } from './data/cult';
 import { FATE_BY_ID } from './data/fate';
 import { ATTR_NAMES, AttrKey, CN_NUM, REALMS, ROOTS, SCHOOL_NAMES, School, TALENT_BY_ID, Talent, cnAge } from './data/core';
 import { COMPANION_NAMES, CompanionId, LEGENDS, MUTATORS, PAGES, VOLUME_NAMES, WISHES } from './data/content';
@@ -82,6 +85,13 @@ async function choose(p: Prompt): Promise<number> {
       if (n >= 0 && n < p.options.length && !p.options[n].disabled) done(n);
       if ((e.key === 'Enter' || e.key === ' ') && p.options.length === 1) done(0);
     };
+    if (p.key && BAG_KEYS.has(p.key) && game?.L?.inDao) {
+      const bb = document.createElement('button');
+      bb.className = 'btn sm bag-open';
+      bb.textContent = '打开行囊';
+      bb.onclick = () => openBag(game.L, refresh);
+      box.querySelector('.hint')?.before(bb);
+    }
     window.addEventListener('keydown', onKey);
     let picked = false;
     async function done(i: number) {
@@ -205,7 +215,8 @@ function dieFace(f: number): string {
   const red = f === 1 || f === 4 ? ' red' : '';
   return PIP_POS[f].map((p) => `<i class="pip${red}" style="grid-area:${Math.ceil(p / 3)}/${((p - 1) % 3) + 1}"></i>`).join('');
 }
-const AUTO_KEYS = new Set(['oracle', 'hold', 'build', 'holdBranch']);
+const AUTO_KEYS = new Set(['oracle', 'hold', 'build', 'holdBranch', 'retreat', 'trialInsight', 'newGong', 'yujian', 'canye']);
+const BAG_KEYS = new Set(['battlePrep', 'retreat', 'market', 'gongSwap']);
 let lastRollAct: RollAction['action'] | null = null;
 // 上一次落子的格子与结算出来的简略结果（下一次摆盘时冒在那一格上）
 let landed: { life: number; size: number; slot: number; tip?: { chips: Chip[]; caption: string | null } } | null = null;
@@ -480,6 +491,9 @@ interface Stats {
   attrs: Record<AttrKey, number>;
   talents: string[];
   skills: Record<string, number>;
+  qi: Record<string, number>;
+  xinde: number;
+  fj: number;
   traces: number;
 }
 function stats(): Stats | null {
@@ -502,6 +516,9 @@ function stats(): Stats | null {
     attrs: { ...L.attrs },
     talents: [...L.talents],
     skills: Object.fromEntries(L.skills.map((s) => [s.id, s.lvl])),
+    qi: Object.fromEntries((L.bag ?? []).map((t) => [String(t.uid), t.grade])),
+    xinde: L.xinde ?? 0,
+    fj: (L.fjBag?.length ?? 0) + (L.bag ?? []).reduce((a, t) => a + (t.fj?.length ?? 0), 0),
     traces: L.traces.length,
   };
 }
@@ -532,9 +549,12 @@ function diffChips(a: Stats, b: Stats): Chip[] {
   num('暗伤', b.injuries - a.injuries, false);
   for (const t of b.talents) if (!a.talents.includes(t)) out.push({ text: `得天赋「${TALENT_BY_ID[t]?.name ?? t}」`, tone: 'gold' });
   for (const [id, lvl] of Object.entries(b.skills)) {
-    if (!a.skills[id]) out.push({ text: `得法宝「${skillName(id as SkillId)}」`, tone: 'gold' });
-    else if (lvl > a.skills[id]) out.push({ text: `${skillName(id as SkillId)} 升${CN_NUM[lvl]}阶`, tone: 'gold' });
+    if (!a.skills[id]) out.push({ text: `习得${skillName(id as SkillId)}`, tone: 'gold' });
+    else if (lvl > a.skills[id]) out.push({ text: `${skillName(id as SkillId)} ${lvl >= 5 ? '圆满' : CN_NUM[lvl] + '层'}`, tone: 'gold' });
   }
+  for (const uid of Object.keys(b.qi)) if (a.qi[uid] === undefined) out.push({ text: '得一件法宝', tone: 'gold' });
+  if (b.fj > a.fj) out.push({ text: `附诀 +${b.fj - a.fj}`, tone: 'gold' });
+  num('心得', b.xinde - a.xinde);
   if (b.traces > a.traces) out.push({ text: '留下一道痕迹', tone: 'neutral' });
   return out.slice(0, 7);
 }
@@ -689,7 +709,7 @@ function refresh() {
     ${bar(L.hp, L.maxHp, 'hp', `气血 ${Math.ceil(L.hp)}/${L.maxHp}${L.injuries ? ` · 暗伤 ${L.injuries}` : ''}`)}
     <div class="attrs">${(Object.keys(ATTR_NAMES) as AttrKey[]).map((k) => `<span>${ATTR_NAMES[k]}<b>${L.attrs[k]}</b></span>`).join('')}</div>
     <div class="p-grid">
-      <span>出身</span><b>${L.origin}</b>
+      <span>出身</span><b class="small" title="${esc(L.origin)}">${esc(identityLine(L))}</b>
       <span>灵根</span><b>${root}</b>
       <span>${L.inDao ? '灵石' : '银两'}</span><b>${L.stones}</b>
       <span>功德</span><b>${L.merit}</b>
@@ -703,12 +723,28 @@ function refresh() {
     <div class="d-only">${faceBlock(L)}</div>
     <h4>天赋</h4><div class="chips">${L.talents.map((t) => `<span class="chip g-${TALENT_BY_ID[t].grade}" title="${TALENT_BY_ID[t].desc}">${TALENT_BY_ID[t].name}</span>`).join('')}</div>
     ${boardBlock(L)}
-    ${L.skills.length ? `<h4>法宝</h4><div class="chips">${L.skills.map((s) => `<span class="chip">${skillName(s.id)} ${CN_NUM[s.lvl]}阶</span>`).join('')}</div>` : ''}
+    ${L.inDao ? gongBlock(L) : ''}
     ${wish ? `<h4>心愿</h4><div class="wish ${L.wish!.done ? 'done' : ''}">「${wish.name}」${wish.cond}<br>${bar(L.wish!.progress, 1, 'wishbar', L.wish!.done ? '圆满' : Math.round(L.wish!.progress * 100) + '%')}</div>` : ''}
     ${L.traces.length ? `<h4>本世痕迹</h4><div class="chips">${L.traces.map((t) => `<span class="chip trace" title="${MUTATORS.find((m) => m.trace === t.tag)?.name ?? ''}">${MUTATORS.find((m) => m.trace === t.tag)?.name ?? t.tag}</span>`).join('')}</div>` : ''}
     <h4>命灯</h4><div class="lamps">${lamps}</div>`;
   const close = panelEl.querySelector<HTMLButtonElement>('[data-close]');
   if (close) close.onclick = () => togglePanel(false);
+  const bagBtn = panelEl.querySelector<HTMLButtonElement>('[data-bag]');
+  if (bagBtn) bagBtn.onclick = () => openBag(L, refresh);
+}
+
+// 角色面板：功法、心得与法宝一览
+function gongBlock(L: LifeState) {
+  const rows = L.skills
+    .map((s) => {
+      const g = gongLine(L, s);
+      return `<div class="gong-row"><b>${esc(g.name)}${s.bm ? '<i class="bm">本命</i>' : ''}</b><span>${g.grade} · ${g.layer}<small>/${g.cap}</small></span><small class="${g.qi === '无器可御' || g.qi.includes('器不承法') ? 'warn' : ''}">${esc(g.qi)}${g.fj.length ? ' · ' + g.fj.join('、') : ''}</small></div>`;
+    })
+    .join('');
+  const items = (L.bag ?? []).filter((t) => t.kind !== 'gong' && (L.load?.passive.includes(t.uid) || L.load?.active.includes(t.uid)));
+  return `<h4>功法 <button class="btn sm" data-bag>行囊</button></h4>
+    <div class="gong-list">${rows || '<p class="muted">无</p>'}</div>
+    <div class="p-row small"><span>心得 ${L.xinde ?? 0}</span><span>${items.length ? items.map((t) => t.name).join('、') : '未带法宝'}</span></div>`;
 }
 
 function locName(id: string, era?: string | null) {
@@ -775,7 +811,19 @@ function showPast() {
   const legList = legs.length
     ? `<ul>${legs.map((l) => `<li><b>${esc(l.name)}</b>（${HOLDINGS[l.type].name} ${l.lv} 级）· 第 ${l.life} 世 · ${ERA_BY_ID[l.era]?.name ?? l.era}${l.keep ? ' · 秘藏留给了后人' : ''}</li>`).join('')}</ul>`
     : '<p class="muted">还没有留下什么。把产业经营到三级以上，死后会变成后世路上的遗迹。</p>';
+  const C = meta.cult ?? { book: {}, mortalStreak: 0, saves: 0, newAch: [] };
+  const bookRows = (Object.keys(C.book) as SkillId[]).map((id) => {
+    const be = C.book[id]!;
+    return `<li><b>${GONGFA[id].name}</b> ${GF_GRADES[be.grade]} · 最高${['', '一层', '二层', '三层', '四层', '圆满'][be.best]}${be.fj.length ? ' · 附诀 ' + be.fj.length : ''}</li>`;
+  }).join('');
+  const steles = ACHIEVEMENTS.map((a) => {
+    const got = meta.achievements.includes(a.id);
+    return `<div class="face ${got ? 'got' : ''}"><b>${a.id} ${got ? a.name : '？'}</b><span>${got ? a.reward : a.cond}</span></div>`;
+  }).join('');
+  const idOpen = IDENTITIES.filter((d) => identityOpen(meta, d.id));
   const box = openModal(`<h2>前世书</h2>
+    <h3>轮回碑 · ${meta.achievements.length}/${ACHIEVEMENTS.length}</h3><p class="muted">身份随机抽取：凡俗 / 小富 / 宗门 / 顶级。已开身份 ${idOpen.length}/${IDENTITIES.length}：${idOpen.map((d) => `${TIER_NAMES[d.tier].slice(0, 1)}·${d.name}`).join('、')}</p><div class="faces">${steles}</div>
+    <h3>功法谱 · 收录 ${bookEntries(meta)} · 底蕴 ${dizhun(meta)}</h3><p class="muted">前世练到的层数让闭关更省（70% / 50% / 35% / 25%），附诀随功法谱转世。底蕴让劫难 ×${enemyMul(meta).toFixed(2)}（至多 1.5）。</p>${bookRows ? `<ul>${bookRows}</ul>` : '<p class="muted">还是空的。</p>'}
     <h3>千面录 · ${kinds}/16 种引子</h3><p class="muted">集齐 3 种出现「说书人」，6 种开启轮回盘「择世」，12 种得称号「一人千面」。</p><div class="faces">${faceGrid}</div>
     <h3>故人 · ${acqs.length}/8</h3>${acqList}
     <h3>遗泽 · ${legs.length}/6</h3>${legList}

@@ -4,6 +4,8 @@ import type { BattleSpec, BattleResult } from './spec';
 import { ERA_LOOK, mix, rgba } from '../art/palette';
 import { sfx } from '../art/sound';
 import { pillarPeak, cloudBank, rng } from '../art/scene';
+import { FUJUE, ITEMS, SK_SHORT } from '../data/cult';
+import type { SkillId } from '../game/types';
 
 const INK = '#1d2a38';
 const BLUE_INK = '#3A6080';
@@ -348,9 +350,9 @@ export function runBattle(spec: BattleSpec, root: HTMLElement, era = 'E1'): Prom
     const hud = document.createElement('div');
     hud.className = 'battle-hud';
     root.appendChild(hud);
-    const lvl = document.createElement('div');
-    lvl.className = 'level-up hidden';
-    root.appendChild(lvl);
+    const acts = document.createElement('div');
+    acts.className = 'act-bar';
+    root.appendChild(acts);
     const ctx = canvas.getContext('2d')!;
     const keys = new Set<string>();
     let joy: { ox: number; oy: number; x: number; y: number } | null = null;
@@ -369,7 +371,7 @@ export function runBattle(spec: BattleSpec, root: HTMLElement, era = 'E1'): Prom
       const k = e.key.toLowerCase();
       if (e.type === 'keydown') {
         keys.add(k);
-        if (sim.levelUp && ['1', '2', '3', '4'].includes(k)) pickLevel(Number(k) - 1);
+        if (['1', '2', '3'].includes(k)) sim.useActive(Number(k) - 1);
         if (k === 'q') toggleHold();
         if (k === 'p' || k === 'escape') {
           paused = !paused;
@@ -379,7 +381,7 @@ export function runBattle(spec: BattleSpec, root: HTMLElement, era = 'E1'): Prom
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
     };
     const onDown = (e: PointerEvent) => {
-      if ((e.target as HTMLElement).closest('button, .level-up')) return;
+      if ((e.target as HTMLElement).closest('button, .act-bar')) return;
       joy = { ox: e.clientX, oy: e.clientY, x: e.clientX, y: e.clientY };
     };
     const onMove = (e: PointerEvent) => {
@@ -425,28 +427,28 @@ export function runBattle(spec: BattleSpec, root: HTMLElement, era = 'E1'): Prom
       hold.classList.toggle('active', sim.holdFire);
     }
 
-    function pickLevel(i: number) {
-      sim.chooseLevel(i);
-      renderLevel();
-    }
-    function renderLevel() {
-      if (!sim.levelUp) {
-        lvl.classList.add('hidden');
-        return;
-      }
-      lvl.classList.remove('hidden');
-      lvl.innerHTML = `<div class="lv-title">悟道 · 第 ${sim.level} 重</div>`;
-      sim.levelUp.forEach((o, i) => {
-        const b = document.createElement('button');
-        b.className = 'lv-opt';
-        b.innerHTML = `<b>${i + 1}. ${o.label}</b><span>${o.desc}</span>`;
-        b.onclick = () => pickLevel(i);
-        lvl.appendChild(b);
+    // 主动法宝：键 1/2/3，触屏是右下的圆钮
+    const actBtns = sim.actives.map((a, i) => {
+      const b = document.createElement('button');
+      b.className = 'act-btn';
+      b.onclick = () => sim.useActive(i);
+      acts.appendChild(b);
+      return b;
+    });
+    function renderActs() {
+      sim.actives.forEach((a, i) => {
+        const it = ITEMS[a.id];
+        const left = a.recharge ? `${a.charge}/${a.cost}` : `×${a.uses}`;
+        const html = `<b>${it?.name.slice(0, 2) ?? a.id}</b><i>${left}</i>${touch ? '' : `<u>${i + 1}</u>`}`;
+        const b = actBtns[i];
+        if (b.dataset.last !== html) {
+          b.innerHTML = html;
+          b.dataset.last = html;
+        }
+        b.classList.toggle('off', !sim.canUse(a));
       });
     }
-
     let last = performance.now();
-    let lvShown = false;
     let endTimer = 0;
     const frame = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
@@ -467,16 +469,13 @@ export function runBattle(spec: BattleSpec, root: HTMLElement, era = 'E1'): Prom
         }
       }
       if (!paused) sim.update(dt, mx, my);
-      if (!!sim.levelUp !== lvShown) {
-        lvShown = !!sim.levelUp;
-        renderLevel();
-      }
+      renderActs();
       fxUpdate(fxState, sim, dt);
       draw(ctx, sim, root.clientWidth, root.clientHeight, joy, fxState);
       drawHud(hud, sim, paused);
       if (sim.done) {
         endTimer += dt;
-        if (endTimer > 1.2) {
+        if (endTimer > 2.4) {
           cleanup();
           resolve(sim.result!);
           return;
@@ -503,28 +502,37 @@ export function runBattle(spec: BattleSpec, root: HTMLElement, era = 'E1'): Prom
 function drawHud(hud: HTMLElement, sim: BattleSim, paused: boolean) {
   const s = sim.spec;
   const hpPct = Math.max(0, sim.hp / sim.maxHp) * 100;
-  const xpPct = (sim.xp / sim.levelNeed) * 100;
   const muts = s.mutators.map((m) => `<span class="mut" title="利：${m.pro}；弊：${m.con}">${m.name}</span>`).join('');
   const parts = sim.partners.map((p) => `<span class="mut ${p.down ? 'down' : ''}">${p.name}${p.down ? '·倒' : ''}</span>`).join('');
-  const sk = sim.skills.map((k) => `<span class="sk">${skillShort(k.id)}<i>${k.lvl}</i></span>`).join('');
+  const sk = sim.gong.map((k) => `<span class="sk${k.weak ? ' weak' : ''}" title="${k.name}${k.fj.length ? ' · ' + k.fj.map((f) => FUJUE[f]?.name).join('、') : ''}">${skillShort(k.id)}<i>${k.lvl}</i>${k.fj.length ? `<em>${k.fj.length}</em>` : ''}</span>`).join('') + (s.idle ?? []).map((n) => `<span class="sk idle" title="${n}：无器可御">${n.slice(1, 2)}</span>`).join('');
+  const buffs = [sim.zhenStacks ? `镇岳 ${sim.zhenStacks}` : '', sim.t < sim.huxinT ? '护心' : '', sim.tayunReady ? '踏云' : '', sim.reflectT > 0 ? '八卦' : ''].filter(Boolean).map((b) => `<span class="mut">${b}</span>`).join('');
   const html = `
     <div class="hud-top"><b>${s.title}</b><span>${sim.objective()}</span>${muts}${parts}</div>
     <div class="hud-bottom">
       <div class="bar hp"><div style="width:${hpPct}%"></div><em>气血 ${Math.ceil(sim.hp)}/${Math.round(sim.maxHp)}${sim.shield > 0 ? ` · 护盾 ${Math.round(sim.shield)}` : ''}</em></div>
-      <div class="bar xp"><div style="width:${xpPct}%"></div><em>悟道 ${sim.level} 重</em></div>
-      <div class="skills">${sk}</div>
+      <div class="skills">${sk}${buffs}<span class="orb-n">灵气 ${sim.orbsGot}</span></div>
     </div>
     ${sim.messageT > 0 ? `<div class="hud-msg">${sim.message}</div>` : ''}
     ${paused ? '<div class="hud-msg">暂停中</div>' : ''}
-    ${sim.done ? `<div class="hud-msg big">${sim.result?.win || sim.result?.survivedKnock ? (sim.result?.survivedKnock ? '叩门' : '劫过') : '败'}</div>` : ''}`;
+    ${sim.done ? `<div class="hud-msg big">${sim.result?.fled ? '遁' : sim.result?.win || sim.result?.survivedKnock ? (sim.result?.survivedKnock ? '叩门' : '劫过') : '败'}</div>${dmgSummary(sim)}` : ''}`;
   if (hud.dataset.last !== html) {
     hud.innerHTML = html;
     hud.dataset.last = html;
   }
 }
 
-const SK: Record<string, string> = { sword: '剑', orbit: '印', thunder: '雷', fire: '火', frost: '冰', ink: '幡', art: '法' };
-const skillShort = (id: string) => SK[id] ?? id;
+const skillShort = (id: string) => SK_SHORT[id as SkillId] ?? id;
+// 战后小结：各功法出力占比与附诀触发
+function dmgSummary(sim: BattleSim) {
+  const by = Object.entries(sim.dmgBy).filter(([, v]) => v > 0);
+  const tot = by.reduce((a, [, v]) => a + v, 0);
+  if (!tot) return '';
+  const name = (k: string) => sim.gong.find((g) => g.id === k)?.name ?? k;
+  const rows = by.sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => `<div class="ds-row"><span>${name(k)}</span><i style="width:${Math.round((v / tot) * 100)}%"></i><b>${Math.round((v / tot) * 100)}%</b></div>`).join('');
+  const procs = Object.entries(sim.procs).map(([k, v]) => `${FUJUE_NAME[k] ?? k} ${v}`).join(' · ');
+  return `<div class="dmg-sum"><h5>出力</h5>${rows}${procs ? `<p>${procs}</p>` : ''}</div>`;
+}
+const FUJUE_NAME: Record<string, string> = Object.fromEntries(Object.values(FUJUE).map((f) => [f.id, f.name]));
 
 interface FxState { seen: WeakSet<object>; splats: Splat[]; shake: number; flash: number; lastHp: number }
 
@@ -699,13 +707,14 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
     ctx.stroke();
   }
   // 环身剑印
-  const orbitLvl = sim.skillLvl('orbit');
-  if (orbitLvl && !sim.holdFire) {
-    const n = 2 + orbitLvl;
+  const orbitG = sim.gong.find((g) => g.id === 'orbit');
+  if (orbitG && !sim.holdFire) {
+    const n = sim.orbitN(orbitG);
+    const rr = sim.orbitR(orbitG);
     for (let i = 0; i < n; i++) {
       const a = t * 3 + (i / n) * Math.PI * 2;
-      const ox = sim.px + Math.cos(a) * 78;
-      const oy = sim.py + Math.sin(a) * 78;
+      const ox = sim.px + Math.cos(a) * rr;
+      const oy = sim.py + Math.sin(a) * rr;
       shotStroke(ctx, ox, oy, -Math.sin(a), Math.cos(a), '#4fd2f5', 6);
     }
   }

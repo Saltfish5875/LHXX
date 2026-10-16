@@ -12,6 +12,7 @@ import {
   boardLayout, boardStageOf, tileMonth,
 } from '../data/board';
 import { chance, pick, randInt, shuffle, weighted } from './rng';
+import { layerUp, retreat } from './cult';
 
 const STOP = 0; // 「止」面
 const DUN = 7; // 「遁」面
@@ -665,6 +666,12 @@ async function landFate(g: Game, fought: { v: boolean }) {
     }
     g.highlight(`本命格「${def.name}」修到了顶`, 40, 'fateTile');
   }
+  // 修炼与法宝：本命格可闭关练功、温习功法谱
+  if (L.inDao && !g.dead()) {
+    L.xinde = (L.xinde ?? 0) + 1;
+    g.log('坐定片刻，心得 +1。');
+    await retreat(g);
+  }
 }
 
 // ---------- 天机格 ----------
@@ -776,7 +783,7 @@ async function levelUp(g: Game, h: Holding, loc: string, fought: { v: boolean })
       case 'zong': L.favor = Math.min(5, L.favor + 2); break;
       case 'dan': L.lifeBonus += 30; break;
       case 'ling': g.trace('cave_heaven'); break;
-      case 'jian': for (const s of L.skills) s.lvl = Math.min(5, s.lvl + 1); break;
+      case 'jian': for (const s of L.skills) layerUp(g, s, '剑冢养剑'); break;
       case 'si': L.insightExtra = (L.insightExtra ?? 0) + 50; break;
     }
   }

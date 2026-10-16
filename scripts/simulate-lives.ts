@@ -10,6 +10,7 @@ import type { Tendency, LogEntry } from '../src/game/types';
 import type { BattleSpec } from '../src/battle/spec';
 import { FATE_BY_ID, NOTHING_CULT_MORE, NOTHING_MORTAL_MORE } from '../src/data/fate';
 import { NOTHING_CULT, NOTHING_MORTAL } from '../src/data/events';
+import { dizhun } from '../src/game/cult';
 
 const NOTHING = new Set([...NOTHING_MORTAL, ...NOTHING_MORTAL_MORE, ...NOTHING_CULT, ...NOTHING_CULT_MORE]);
 
@@ -65,13 +66,14 @@ interface Stats {
   dice: number[];
   laps0: number;
   btitles: Record<string, number>;
+  cult: { gong: number; layer: number; qi: number; fj: number; items: number; xinde: number; tiers: number[]; dao: number };
 }
 
 async function run(tend: Tendency): Promise<Stats> {
   setSeed(SEED * 1000 + tend.length);
   const meta = newMeta();
   meta.settings.tendency = tend;
-  const st: Stats = { decisions: 0, rounds: 0, nothing: 0, battles: 0, battlesWon: 0, deaths: {}, ages: [], realms: [], pagesByLife: [], firstRepeatLife: null, wishes: 0, wishesDone: 0, endings: [], errors: 0, trials: {}, cardsTotal: 0, cardsFace: 0, hookLives: 0, hookDone: 0, reunions: 0, acqResolved: 0, eras: {}, eraRepeat: 0, fates: {}, mismatch: 0, blocked: 0, blockedBy: {}, recovered: 0, retired: 0, choicesSeen: 0, choicesRepeat: 0, flavorTotal: 0, flavorDistinct: 0, trialBattles: 0, laps: 0, stops: 0, kinds: {}, holdLives: 0, holdMax: [0, 0, 0, 0, 0, 0], ruinVisits: 0, dice: [0, 0, 0, 0], laps0: 0, btitles: {} };
+  const st: Stats = { decisions: 0, rounds: 0, nothing: 0, battles: 0, battlesWon: 0, deaths: {}, ages: [], realms: [], pagesByLife: [], firstRepeatLife: null, wishes: 0, wishesDone: 0, endings: [], errors: 0, trials: {}, cardsTotal: 0, cardsFace: 0, hookLives: 0, hookDone: 0, reunions: 0, acqResolved: 0, eras: {}, eraRepeat: 0, fates: {}, mismatch: 0, blocked: 0, blockedBy: {}, recovered: 0, retired: 0, choicesSeen: 0, choicesRepeat: 0, flavorTotal: 0, flavorDistinct: 0, trialBattles: 0, laps: 0, stops: 0, kinds: {}, holdLives: 0, holdMax: [0, 0, 0, 0, 0, 0], ruinVisits: 0, dice: [0, 0, 0, 0], laps0: 0, btitles: {}, cult: { gong: 0, layer: 0, qi: 0, fj: 0, items: 0, xinde: 0, tiers: [0, 0, 0, 0], dao: 0 } };
   let prevChoices = new Set<string>();
   let curChoices = new Set<string>();
   let lifeLogs: string[] = [];
@@ -91,7 +93,6 @@ async function run(tend: Tendency): Promise<Stats> {
         const buy = en.filter((x) => x.i < p.options.length - 1);
         return buy.length ? buy[0].i : p.options.length - 1;
       }
-      if (p.key === 'market') return p.options.length - 1;
       if (p.autoPick !== undefined && !p.options[p.autoPick]?.disabled) return p.autoPick;
       // 铸道基：多数玩家会尽量顺着本命走
       if (p.key === 'daoji') return !p.options[1]?.disabled && rand() < 0.7 ? 1 : 0;
@@ -185,6 +186,16 @@ async function run(tend: Tendency): Promise<Stats> {
     }
     const L = g.L;
     if (L.holdings?.length) st.holdLives += 1;
+    st.cult.tiers[L.tier ?? 0] += 1;
+    if (L.inDao) {
+      st.cult.dao += 1;
+      st.cult.gong += L.skills.length;
+      st.cult.layer += Math.max(0, ...L.skills.map((s) => s.lvl));
+      st.cult.qi += Math.max(0, ...(L.bag ?? []).filter((t) => t.kind === 'gong').map((t) => t.grade));
+      st.cult.fj += (L.bag ?? []).reduce((a, t) => a + (t.fj?.length ?? 0), 0);
+      st.cult.items += (L.bag ?? []).filter((t) => t.kind !== 'gong').length;
+      st.cult.xinde += L.xinde ?? 0;
+    }
     st.holdMax[Math.max(0, ...(L.holdings ?? []).map((h) => h.lv))] += 1;
     st.dice[L.dice?.n ?? 0] += 1;
     st.fates[L.fate ?? '?'] = (st.fates[L.fate ?? '?'] ?? 0) + 1;
@@ -247,6 +258,9 @@ function report(tend: Tendency, st: Stats, meta: ReturnType<typeof newMeta>) {
   console.log(`棋盘：每世 ${(st.laps / Math.max(1, n)).toFixed(1)} 圈（目标 50～70），每圈停 ${(st.stops / Math.max(1, st.laps)).toFixed(2)} 格；停格分布 ${ks}`);
   console.log(`产业：置过产业的世 ${st.holdLives}；最高等级分布 0..5 = ${st.holdMax.join('/')}；遗迹进入 ${st.ruinVisits} 次，遗泽在册 ${(meta.legacies ?? []).length}；终局骰数 1/2/3 = ${st.dice.slice(1).join('/')}`);
   console.log(`遭遇战来源：${Object.entries(st.btitles).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, v]) => `${k} ${v}`).join('，')}`);
+  const c = st.cult;
+  const d = Math.max(1, c.dao);
+  console.log(`修炼与法宝（入道的世）：功法 ${(c.gong / d).toFixed(1)} 门，最高层 ${(c.layer / d).toFixed(1)}，最好法宝品级 ${(c.qi / d).toFixed(1)}（0 凡 4 仙），附诀 ${(c.fj / d).toFixed(1)}，被动/主动法宝 ${(c.items / d).toFixed(1)}，余心得 ${(c.xinde / d).toFixed(1)}；身份档 凡/富/宗/顶 = ${c.tiers.join('/')}；轮回碑 ${meta.achievements.length}；底蕴 ${dizhun(meta)}`);
   if (st.errors) console.log(`!!! 出错 ${st.errors} 次`);
 }
 

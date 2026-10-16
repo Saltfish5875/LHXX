@@ -36,6 +36,7 @@ export function newMeta(): MetaState {
     lastEra: null,
     nextBonus: {},
     settings: { tendency: 'safe', speed: 1 },
+    cult: { book: {}, mortalStreak: 0, saves: 0, newAch: [] },
   };
 }
 
@@ -136,8 +137,5 @@ export interface UnlockItem {
 }
 export const UNLOCKS: UnlockItem[] = [
   { id: 'demon', name: '魔域', desc: '开启魔域地点：魔修与赤衣势力', price: 120, gate: (M) => M.saga.volume >= 2, gateText: '仙途卷解锁' },
-  { id: 'inkOrphan', name: '墨门遗孤', desc: '新出身：魔修道途 +20', price: 150, gate: (M) => M.saga.volume >= 2, gateText: '仙途卷解锁' },
-  { id: 'dragon', name: '龙族血脉', desc: '新出身：根骨 +3，凡人寿元 -10，不会溺水', price: 200, gate: (M) => M.saga.volume >= 2, gateText: '仙途卷解锁' },
-  { id: 'painter', name: '画中仙裔', desc: '新出身：符修道途 +20，古卷灵感 +1', price: 250, gate: (M) => M.saga.pages.includes(13), gateText: '需天书第 13 页' },
   { id: 'rift', name: '画外裂隙', desc: '元婴后可去，奇遇全为主线线索', price: 200, gate: (M) => M.saga.pages.includes(15), gateText: '需天书第 15 页' },
 ];

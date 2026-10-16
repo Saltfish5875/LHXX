@@ -215,7 +215,7 @@ export const CONSEQ: Record<string, ConseqDef> = {
     ] },
   treasure: { name: '法宝异动', icon: '宝', text: '新得的法宝夜里自己飞了起来，在屋里乱撞。',
     options: [
-      { label: '彻夜镇压', desc: '法宝升阶', eff: { flag: 'allUpOne', text: '天亮时它服了。' } },
+      { label: '彻夜镇压', desc: '一门功法 +1 层', eff: { flag: 'allUpOne', text: '天亮时它服了。' } },
       { label: '放任', desc: '气血上限 -10', eff: { hpMax: -10, text: '它撞碎了你半间屋子，也撞伤了你。' } },
     ] },
   ruined: { name: '废墟', icon: '墟', text: '你的产业只剩一片瓦砾。',

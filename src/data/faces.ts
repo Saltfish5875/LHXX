@@ -370,12 +370,12 @@ export const IDENTITY_CHOICES: (LifeEvent & { hookOnly?: boolean })[] = [
     { label: '让他留着', desc: '沾染墨气，结下「诺」：画中人', eff: { trace: 'ink_touched', acq: { role: '画中人', relation: 'vow' } } },
   ] }),
   ev({ id: 'C-宗门-3', locs: ['sect'], kind: 'choice', hookOnly: true, text: '杂役期满，掌门问你要什么。', options: [
-    { label: '一部功法', desc: '得法宝一件，了结', eff: { flag: 'giftSkill', hook: 'done' } },
+    { label: '一部功法', desc: '得一门功法，了结', eff: { flag: 'giftSkill', hook: 'done' } },
     { label: '一个名分', desc: '外门弟子，人情 +2，了结', eff: { favor: 2, hook: 'done' } },
     { label: '下山', desc: '功德 +20，了结', eff: { merit: 20, hook: 'done' } },
   ] }),
   ev({ id: 'C-宗门-4', locs: ['sect'], kind: 'choice', when: (_L, M) => new Set((M.faces ?? []).map((f) => f.hook)).size >= 3, text: '藏经阁里有一本你前世写的笔记，署名不是你。', options: [
-    { label: '照着练', desc: '得法宝一件，本派道途 +20', eff: { flag: 'pastNotes' } },
+    { label: '照着练', desc: '得一门功法，本派道途 +20', eff: { flag: 'pastNotes' } },
     { label: '补写一页', desc: '古卷灵感 +1，宿慧 +20', eff: { inspire: 1, insight: 20 } },
   ] }),
   ev({ id: 'C-云游-2', locs: ['roam'], kind: 'choice', when: (L) => L.era === 'E4', text: '两宗为一条灵脉开战，都来请你。', options: [
@@ -412,7 +412,7 @@ export const IDENTITY_CHOICES: (LifeEvent & { hookOnly?: boolean })[] = [
     { label: '取它内丹', desc: '修为 +4%，杀生', eff: { xpPct: 4, kill: true } },
   ] }),
   ev({ id: 'C-秘境-2', locs: ['realm'], kind: 'choice', when: (L) => L.era === 'E3', text: '海底沉城的城门上刻着你上一世的名字。', options: [
-    { label: '进城', desc: '秘境劫难，胜得一件前世法宝', eff: { battle: { kind: 'beast', title: '沉城', cultOnly: true, win: { flag: 'giftSkill' } } } },
+    { label: '进城', desc: '秘境劫难，胜得一门前世功法', eff: { battle: { kind: 'beast', title: '沉城', cultOnly: true, win: { flag: 'giftSkill' } } } },
     { label: '在旁边补刻今生的名字', desc: '宿慧 +20，墓志铭高光', eff: { insight: 20, hl: { text: '在沉城门上刻下今生的名字', score: 62 } } },
   ] }),
   ev({ id: 'C-秘境-3', locs: ['realm'], kind: 'choice', when: (L) => L.inDao, text: '一面照命镜照出你下一世的身世。', options: [

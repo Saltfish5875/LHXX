@@ -162,7 +162,7 @@ export const FATE_EVENTS: LifeEvent[] = [
   { id: 'F-剑体-3', locs: ['realm', 'fortune', 'roam', 'cave'], kind: 'choice', text: '剑冢深处，一柄断剑认出了你，剑身上的锈一片片剥落。',
     when: (L) => isFate(L, 'jianti') && L.daoji === 'sword' && L.realm >= 3,
     options: [
-      { label: '以身养剑', desc: '寿元 -20，飞剑升阶，修炼 ×1.1', eff: { life: -20, skill: 'sword', fate: { xpMul: 1.1 }, hl: { text: '以身养剑', score: 70 } } },
+      { label: '以身养剑', desc: '寿元 -20，剑法 +1 层，修炼 ×1.1', eff: { life: -20, skill: 'sword', fate: { xpMul: 1.1 }, hl: { text: '以身养剑', score: 70 } } },
       { label: '拜过离开', desc: '功德 +20', eff: { merit: 20 } },
     ] },
   // 佛子
