@@ -1211,11 +1211,32 @@ body {
 
 /* ================= 命途棋盘 ================= */
 .board {
+  --k: 4;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--k), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--k), auto);
   gap: 6px;
   max-width: 600px;
   margin: 0 auto;
+}
+.board.s5,
+.board.s6,
+.board.s7 {
+  max-width: 720px;
+}
+/* 大棋盘在电脑上也压一压格高，别把卷面挤没了 */
+.board.s6,
+.board.s7 {
+  gap: 4px;
+}
+.board.s6 .tile,
+.board.s7 .tile {
+  min-height: 46px;
+  padding: 10px 2px 2px;
+}
+.board.s6 .t-icon,
+.board.s7 .t-icon {
+  font-size: 18px;
 }
 .tile {
   position: relative;
@@ -1411,7 +1432,7 @@ body {
 }
 /* 盘心 */
 .board-center {
-  grid-area: 2 / 2 / 4 / 4;
+  grid-area: 2 / 2 / -2 / -2;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -1426,6 +1447,12 @@ body {
   font-size: 15px;
   justify-content: center;
   line-height: 1.35;
+}
+.board-center .sign > span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .b-info {
   font-size: 12px;
@@ -1443,72 +1470,182 @@ body {
 }
 .dice {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
   justify-content: center;
+  align-items: flex-start;
+  min-height: 62px;
 }
+/* 骰子：象牙白的小方块，九宫点位，一点四点朱红 */
 .die {
+  --sz: 44px;
+  position: relative;
+  display: grid;
+  grid-template: repeat(3, 1fr) / repeat(3, 1fr);
+  place-items: center;
+  width: var(--sz);
+  height: var(--sz);
+  padding: 6px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 55%),
+    linear-gradient(145deg, #fffdf8 0%, #f3ece0 70%, #e4dccd 100%);
+  border: 1px solid rgba(70, 58, 40, 0.35);
+  box-shadow:
+    inset -2px -3px 0 rgba(150, 132, 104, 0.28),
+    inset 2px 2px 0 rgba(255, 255, 255, 0.9),
+    0 4px 8px rgba(40, 50, 63, 0.22);
+  flex: none;
+}
+.pip {
+  width: 72%;
+  height: 72%;
+  max-width: 9px;
+  max-height: 9px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #4a5560, #1c232c 70%);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.4);
+}
+.pip.red {
+  background: radial-gradient(circle at 35% 30%, #e0675b, #a8291f 70%);
+}
+.d-char {
+  grid-area: 1 / 1 / 4 / 4;
+  font-family: var(--brush);
+  font-size: 26px;
+  line-height: 1;
+  color: var(--ink);
+}
+.f-stop .d-char {
+  color: var(--blue);
+}
+.f-dun .d-char {
+  color: var(--green);
+}
+.f-jie .d-char {
+  color: var(--red);
+}
+.die-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 58px;
-  padding: 3px 6px 4px;
-  border: 1px solid rgba(28, 35, 44, 0.45);
-  border-radius: 8px;
-  background: #fdfefe;
-  box-shadow: 0 3px 8px rgba(40, 50, 63, 0.14);
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--serif);
   color: var(--ink);
   cursor: pointer;
-  font-family: var(--serif);
+}
+.die-btn .die {
   animation: dieIn 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
   animation-delay: calc(var(--i, 0) * 80ms);
 }
-.die:hover {
+.die-btn:hover .die {
   border-color: var(--blue);
+  transform: translateY(-2px);
 }
-.die:active {
-  transform: scale(0.95);
+.die-btn:active .die {
+  transform: scale(0.94);
 }
-.die b {
-  font-size: 32px;
-  line-height: 1;
-  font-weight: 400;
-}
-.die small {
+.die-btn small {
   font-size: 11px;
   color: var(--ink-2);
-  max-width: 70px;
+  max-width: 72px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.die.f-stop b,
-.die.f-dun b,
-.die.f-jie b {
+.die-btn.ruyi .die {
+  --sz: 34px;
+  padding: 4px;
+  border-radius: 7px;
+}
+.die.rolling {
+  animation: dieTumble 0.34s linear infinite;
+  animation-delay: calc(var(--i, 0) * -90ms);
+}
+.die.landed {
+  animation: dieLand 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.4) both;
+}
+/* 掷骰按钮：盘心一只骰盅，点一下骰子翻出来 */
+.roll-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px 8px 10px;
+  border: 1px solid rgba(184, 56, 46, 0.6);
+  border-radius: 28px;
+  background: linear-gradient(180deg, #fff, #f6efe6);
+  box-shadow: 0 4px 12px rgba(184, 56, 46, 0.18);
+  cursor: pointer;
+  animation: rollPulse 1.6s ease-in-out infinite;
+}
+.roll-btn .die {
+  --sz: 30px;
+  padding: 4px;
+  border-radius: 6px;
+  opacity: 0.85;
+  transform: rotate(calc(-12deg + var(--i, 0) * 14deg));
+}
+.roll-btn b {
   font-family: var(--brush);
-  font-size: 24px;
-  line-height: 32px;
-}
-.die.f-stop b {
-  color: var(--blue);
-}
-.die.f-dun b {
-  color: var(--green);
-}
-.die.f-jie b {
+  font-size: 20px;
+  font-weight: 400;
   color: var(--red);
+  letter-spacing: 2px;
 }
-.die.ruyi {
-  min-width: 42px;
-  padding: 2px 4px;
+.roll-btn:active {
+  transform: scale(0.96);
 }
-.die.ruyi b {
-  font-size: 24px;
+.btn.chk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.btn.chk input {
+  accent-color: var(--red);
+  margin: 0;
 }
 @keyframes dieIn {
   from {
     opacity: 0;
     transform: translateY(-10px) rotate(-120deg) scale(0.6);
+  }
+}
+@keyframes dieTumble {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  25% {
+    transform: translate(-4px, -8px) rotate(90deg) scale(0.92);
+  }
+  50% {
+    transform: translate(3px, -2px) rotate(180deg);
+  }
+  75% {
+    transform: translate(-2px, -6px) rotate(270deg) scale(0.92);
+  }
+  100% {
+    transform: translate(0, 0) rotate(360deg);
+  }
+}
+@keyframes dieLand {
+  0% {
+    transform: translateY(-12px) rotate(-25deg);
+  }
+  60% {
+    transform: translateY(2px) rotate(4deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes rollPulse {
+  50% {
+    box-shadow: 0 4px 18px rgba(184, 56, 46, 0.32);
   }
 }
 .chip.hold {
@@ -1556,23 +1693,127 @@ body {
     font-size: 11px;
   }
   .dice {
-    gap: 6px;
+    gap: 8px;
+    min-height: 54px;
   }
   .die {
-    min-width: 46px;
-    padding: 2px 4px 3px;
+    --sz: 38px;
+    padding: 5px;
   }
-  .die b {
-    font-size: 26px;
-  }
-  .die small {
+  .die-btn small {
     font-size: 10px;
-    max-width: 56px;
+    max-width: 58px;
   }
-  .die.ruyi {
-    min-width: 34px;
+  .die-btn.ruyi .die {
+    --sz: 30px;
   }
-  .die.ruyi b {
-    font-size: 20px;
+  .roll-btn {
+    padding: 6px 12px 6px 8px;
+  }
+  .roll-btn .die {
+    --sz: 26px;
+  }
+  /* 大棋盘：格子更小，月份与节气藏起来 */
+  .board.s5 .tile {
+    min-height: 46px;
+  }
+  .board.s6 .tile,
+  .board.s7 .tile {
+    min-height: 40px;
+    padding: 4px 1px 3px;
+  }
+  .board.s6,
+  .board.s7 {
+    gap: 3px;
+  }
+  .board.s6 .t-month,
+  .board.s7 .t-month {
+    display: none;
+  }
+  .board.s6 .t-icon,
+  .board.s7 .t-icon {
+    font-size: 16px;
+  }
+  .board.s7 .t-name {
+    font-size: 10px;
+  }
+  .board.s6 .t-tag,
+  .board.s7 .t-tag {
+    font-size: 10px;
+    line-height: 12px;
+    padding: 0 2px;
+  }
+}
+
+/* 落子小结果：冒在刚停下的那一格上 */
+.board {
+  position: relative;
+}
+.tile-tip {
+  position: relative;
+  z-index: 5;
+  align-self: start;
+  justify-self: center;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px 4px;
+  max-width: 160%;
+  margin-top: -14px;
+  padding: 3px 7px;
+  border-radius: 10px;
+  background: rgba(253, 254, 254, 0.97);
+  border: 1px solid rgba(28, 35, 44, 0.22);
+  box-shadow: 0 4px 12px rgba(40, 50, 63, 0.2);
+  font-family: var(--serif);
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: tipPop 2.6s ease-out both;
+}
+.tile-tip.below {
+  align-self: end;
+  margin-top: 0;
+  margin-bottom: -14px;
+}
+.tile-tip .up {
+  color: #2f6e5c;
+}
+.tile-tip .gold {
+  color: var(--gold);
+}
+.tile-tip .down {
+  color: var(--red);
+}
+.tile-tip .neutral {
+  color: var(--ink-2);
+}
+@keyframes tipPop {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.85);
+  }
+  10% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.04);
+  }
+  16% {
+    transform: none;
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  .tile-tip {
+    font-size: 11px;
+    padding: 2px 5px;
+    max-width: 200%;
   }
 }
