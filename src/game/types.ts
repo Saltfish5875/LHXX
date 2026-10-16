@@ -52,7 +52,19 @@ export interface Effect {
   insight?: number; // 结算时额外宿慧
   bond?: 'fox' | 'chiyi' | 'danzun' | 'bottle'; // 同行者本世进度 +1
   next?: { fam?: number; fortune?: number; reroll?: number; rerollOnce?: number; chooseHook?: boolean; regretKeep?: number }; // 影响下一世
+  // 命途分岔
+  fate?: {
+    breakVow?: Vow; // 破戒：道心蒙尘，修为停滞
+    capHere?: boolean; // 修为到此为止：上限 = 当前境界
+    lift?: number; // 上限 +n（99 = 解除）
+    clearStall?: boolean; // 了却尘缘
+    recast?: boolean; // 散功重修：退回筑基，重铸道基
+    xpMul?: number; // 本世修炼倍率
+    retire?: boolean; // 安度余生
+    tag?: string; // 记一笔，供后续事件判断（flags[tag] = 当时年龄）
+  };
 }
+export type Vow = 'love' | 'kill';
 
 export interface Roll {
   attr: AttrKey;
@@ -179,6 +191,17 @@ export interface LifeState {
   acqResolved?: { id: string; relation: AcqRelation; earlier: boolean }[];
   acqCards?: number;
   insightExtra?: number;
+  // 命途分岔
+  fate?: string; // 命格
+  daoji?: School | null; // 道基（筑基时铸成）
+  cap?: number | null; // 境界上限（含），null = 无
+  capReason?: string;
+  stall?: Vow | null; // 破戒后道心蒙尘
+  retired?: boolean; // 安度余生
+  xpMul?: number;
+  turnAt?: number | null; // 转机到来的年龄
+  turned?: number; // 本世转机次数
+  seen?: Record<string, number>; // 本世见过的流水事件
 }
 
 export interface Regret {
@@ -225,5 +248,7 @@ export interface MetaState {
   faces?: { hook: string; era: string }[];
   lastEra?: string | null;
   nextBonus?: { fam?: number; fortune?: number; reroll?: number; rerollOnce?: number; chooseHook?: boolean };
+  recentChoices?: string[][]; // 最近两世见过的抉择（跨世冷却）
+  fates?: string[]; // 见过的命格
   settings: { tendency: Tendency; speed: number };
 }
