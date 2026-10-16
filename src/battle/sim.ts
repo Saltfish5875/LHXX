@@ -588,7 +588,7 @@ export class BattleSim {
         const pierce = (this.mods.M02 ? 1 : 0) + (lvl >= 4 ? 1 : 0);
         for (let i = 0; i < n; i++) {
           const ang = Math.atan2(target.y - this.py, target.x - this.px) + (i - (n - 1) / 2) * 0.18;
-          this.shots.push({ x: this.px, y: this.py, vx: Math.cos(ang) * 620, vy: Math.sin(ang) * 620, dmg: this.dmgRoll(11 + 4 * lvl, 'sword'), r: 8, life: 1.2, pierce, hit: new Set(), color: '#3aa7c9', enemy: false, homing: true, kind: 'sword' });
+          this.shots.push({ x: this.px, y: this.py, vx: Math.cos(ang) * 620, vy: Math.sin(ang) * 620, dmg: this.dmgRoll(11 + 4 * lvl, 'sword'), r: 8, life: 1.2, pierce, hit: new Set(), color: '#4fd2f5', enemy: false, homing: true, kind: 'sword' });
         }
       } else if (id === 'thunder') {
         this.cds[id] = Math.max(0.8, 2.4 - 0.28 * lvl);
