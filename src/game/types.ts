@@ -202,6 +202,64 @@ export interface LifeState {
   turnAt?: number | null; // 转机到来的年龄
   turned?: number; // 本世转机次数
   seen?: Record<string, number>; // 本世见过的流水事件
+  // 命途棋盘
+  board?: BoardState;
+  dice?: DiceState;
+  holdings?: Holding[];
+  fateTile?: { lv: number; dusty: number };
+  conseqNext?: string[]; // 本圈留下、下个岁首生成后果格的标签
+  ruinVisits?: Record<string, number>; // 每处遗迹本世进入次数
+  ruinVault?: string[]; // 本世已拿过专属遗物的遗迹
+  ruinCleared?: string[]; // 本世通关过秘库的遗迹（可重振）
+}
+
+// ================= 命途棋盘 =================
+export type TileKind = 'start' | 'fate' | 'market' | 'oracle' | 'hold' | 'loc' | 'conseq' | 'stray' | 'dust' | 'ruin';
+export interface Tile {
+  slot: number;
+  kind: TileKind;
+  loc?: string; // 地点格、引、故：地点 id
+  tag?: CardTag; // 流年签标记
+  ttl: number; // 剩余存续圈数（固定格为 99）
+  ref?: string; // 后果格标签 / 歧路格 id / 遗泽 id / 故人 id
+  peeked?: string;
+}
+export interface BoardState {
+  tiles: Tile[];
+  pos: number;
+  lap: number;
+  stops: number;
+  visited: number[];
+  seenLoc: Record<string, number>; // 本世地点格出现次数
+  gathered: boolean;
+  forceRuin?: boolean;
+  stage?: 'mortal' | 'cult';
+}
+export interface DiceState {
+  n: number; // 1～3
+  stopFace: boolean; // 「止」面：第一颗骰的 1 换成 0
+  dunFace: boolean; // 「遁」面：最后一颗骰的 6 换成遁
+  ruyi: number; // 如意骰：下一次任选点数
+}
+export interface Holding {
+  slot: number;
+  type: string;
+  lv: number;
+  branch?: number;
+  idle: number; // 连续没停过的圈数
+  spent: number;
+  name: string;
+  forge?: number;
+}
+export interface Legacy {
+  id: string;
+  type: string;
+  lv: number;
+  branch?: number;
+  era: string;
+  name: string;
+  life: number;
+  keep?: boolean; // 上一世「留给后人」
 }
 
 export interface Regret {
@@ -250,5 +308,6 @@ export interface MetaState {
   nextBonus?: { fam?: number; fortune?: number; reroll?: number; rerollOnce?: number; chooseHook?: boolean };
   recentChoices?: string[][]; // 最近两世见过的抉择（跨世冷却）
   fates?: string[]; // 见过的命格
+  legacies?: Legacy[]; // 前世产业留下的遗迹
   settings: { tendency: Tendency; speed: number };
 }
