@@ -6,12 +6,13 @@ import { runBattle } from './battle/view';
 import { FATE_BY_ID } from './data/fate';
 import { ATTR_NAMES, AttrKey, CN_NUM, REALMS, ROOTS, SCHOOL_NAMES, School, TALENT_BY_ID, Talent, cnAge } from './data/core';
 import { COMPANION_NAMES, CompanionId, LEGENDS, MUTATORS, PAGES, VOLUME_NAMES, WISHES } from './data/content';
-import type { LifeState, LogEntry, Tendency } from './game/types';
+import type { LifeState, LogEntry, SkillId, Tendency } from './game/types';
 import { ERA_BY_ID, HOOKS, RELATION_NAMES, faceKinds } from './data/faces';
 import { LOC_BY_ID } from './data/events';
 import { Scene } from './art/scene';
 import { moment, momentsIdle, setMomentSpeed } from './art/moments';
 import { sfx, setSound, soundOn } from './art/sound';
+import { Chip, clearOutcome, showOutcome, stampCard, stampOption, sweep } from './art/feedback';
 
 const $ = (id: string) => document.getElementById(id)!;
 const scrollEl = $('scroll');
@@ -22,7 +23,8 @@ const battleEl = $('battle');
 const metaEl = $('meta-info');
 const mstatusEl = $('mstatus');
 const panelMask = $('panel-mask');
-const scene = new Scene($('scene'));
+const sceneHost = $('scene');
+const scene = new Scene(sceneHost);
 
 // 手机上角色面板是底部抽屉
 function togglePanel(open?: boolean) {
@@ -54,6 +56,7 @@ function closeModal() {
 }
 
 async function choose(p: Prompt): Promise<number> {
+  settle();
   await momentsIdle();
   if (p.style === 'well' || p.style === 'epitaph') scene.set({ mode: 'well' });
   return new Promise((resolve) => {
@@ -78,9 +81,17 @@ async function choose(p: Prompt): Promise<number> {
       if ((e.key === 'Enter' || e.key === ' ') && p.options.length === 1) done(0);
     };
     window.addEventListener('keydown', onKey);
-    function done(i: number) {
+    let picked = false;
+    async function done(i: number) {
+      if (picked) return;
+      picked = true;
       window.removeEventListener('keydown', onKey);
       sfx.pluck(i + 2, 0.35);
+      // 只有两项以上的真选择才落印、记得失；「继续」「开卷」这类单按钮直接过
+      if (p.options.length > 1) {
+        await stampOption([...opts.querySelectorAll<HTMLElement>('.opt')], i, auto);
+        beginChoice(p.options[i].label);
+      }
       closeModal();
       resolve(i);
     }
@@ -180,6 +191,7 @@ const AUTO_SCORE: Record<Tendency, Record<string, number>> = {
 };
 
 async function deal(v: DealView): Promise<DealAction> {
+  settle();
   await momentsIdle();
   setMomentSpeed(auto ? meta.settings.speed * 1.6 : 1);
   scene.set({ mode: 'life', danger: v.gathered ? 1 : v.cards.some((c) => c.tag === '劫') ? 0.5 : v.cards.some((c) => c.tag === '凶') ? 0.3 : 0 });
@@ -220,14 +232,21 @@ async function deal(v: DealView): Promise<DealAction> {
         };
       });
     };
-    const pick = (i: number) => {
+    let going = false;
+    const pick = async (i: number) => {
+      if (going) return;
       if (peekMode) {
         if (v.cards[i].peekText) return;
         finish({ action: 'peek', idx: i });
       } else {
+        going = true;
         const c = v.cards[i];
         sfx.pluck([0, 2, 4, 5][i] ?? 3, 0.45);
+        clearOutcome();
+        await stampCard([...dealEl.querySelectorAll<HTMLButtonElement>('.card')], i, auto);
+        sweep(sceneHost);
         scene.set({ loc: c.loc, locName: c.name, danger: c.tag === '劫' ? 0.55 : c.tag === '凶' ? 0.3 : 0 });
+        beginChoice(c.name);
         finish({ action: 'go', idx: i });
       }
     };
@@ -254,6 +273,7 @@ async function deal(v: DealView): Promise<DealAction> {
         return;
       }
       timer = setTimeout(() => {
+        if (going) return;
         const sc = AUTO_SCORE[meta.settings.tendency];
         let best = 0;
         let bs = -99;
@@ -264,7 +284,7 @@ async function deal(v: DealView): Promise<DealAction> {
             best = i;
           }
         });
-        finish({ action: 'go', idx: best });
+        void pick(best);
       }, 450 / meta.settings.speed);
     }
     render();
@@ -280,6 +300,95 @@ function flash(msg: string) {
   d.textContent = msg;
   document.body.appendChild(d);
   setTimeout(() => d.remove(), 2200);
+}
+
+// ---------------- 选择反馈：落印 → 落笔 ----------------
+interface Stats {
+  life: number;
+  age: number;
+  realm: number;
+  inDao: boolean;
+  hp: number;
+  maxHp: number;
+  xp: number;
+  span: number;
+  stones: number;
+  merit: number;
+  favor: number;
+  kills: number;
+  injuries: number;
+  attrs: Record<AttrKey, number>;
+  talents: string[];
+  skills: Record<string, number>;
+  traces: number;
+}
+function stats(): Stats | null {
+  const L = game?.L;
+  if (!L) return null;
+  return {
+    life: L.lifeNo,
+    age: L.age,
+    realm: L.realm,
+    inDao: L.inDao,
+    hp: L.hp,
+    maxHp: L.maxHp,
+    xp: L.xp,
+    span: game.lifespan(),
+    stones: L.stones,
+    merit: L.merit,
+    favor: L.favor,
+    kills: L.kills,
+    injuries: L.injuries,
+    attrs: { ...L.attrs },
+    talents: [...L.talents],
+    skills: Object.fromEntries(L.skills.map((s) => [s.id, s.lvl])),
+    traces: L.traces.length,
+  };
+}
+let pending: { snap: Stats; label: string; caption: string | null } | null = null;
+function beginChoice(label: string) {
+  if (replaying) return;
+  const snap = stats();
+  if (snap) pending = { snap, label, caption: null };
+}
+const sign = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+function diffChips(a: Stats, b: Stats): Chip[] {
+  const out: Chip[] = [];
+  const num = (name: string, d: number, goodUp = true) => {
+    d = Math.round(d);
+    if (!d) return;
+    out.push({ text: `${name} ${sign(d)}`, tone: d > 0 === goodUp ? 'up' : 'down' });
+  };
+  if (b.age > a.age) out.push({ text: `光阴 ${b.age - a.age} 年`, tone: 'neutral' });
+  if (b.inDao && a.inDao && b.realm === a.realm) num('修为', b.xp - a.xp);
+  num('气血', b.hp - a.hp);
+  if (b.maxHp !== a.maxHp) num('气血上限', b.maxHp - a.maxHp);
+  num('寿元', b.span - a.span);
+  (Object.keys(ATTR_NAMES) as AttrKey[]).forEach((k) => num(ATTR_NAMES[k], b.attrs[k] - a.attrs[k]));
+  num('灵石', b.stones - a.stones);
+  num('功德', b.merit - a.merit);
+  num('人情', b.favor - a.favor);
+  num('斩墨', b.kills - a.kills);
+  num('暗伤', b.injuries - a.injuries, false);
+  for (const t of b.talents) if (!a.talents.includes(t)) out.push({ text: `得天赋「${TALENT_BY_ID[t]?.name ?? t}」`, tone: 'gold' });
+  for (const [id, lvl] of Object.entries(b.skills)) {
+    if (!a.skills[id]) out.push({ text: `得法宝「${skillName(id as SkillId)}」`, tone: 'gold' });
+    else if (lvl > a.skills[id]) out.push({ text: `${skillName(id as SkillId)} 升${CN_NUM[lvl]}阶`, tone: 'gold' });
+  }
+  if (b.traces > a.traces) out.push({ text: '留下一道痕迹', tone: 'neutral' });
+  return out.slice(0, 7);
+}
+// 一个选择的结果落定：在画卷上写一句结果、摆出得失
+function settle() {
+  if (!pending || replaying) return;
+  const p = pending;
+  pending = null;
+  const now = stats();
+  if (!now || now.life !== p.snap.life) return;
+  const chips = diffChips(p.snap, now);
+  let line = p.caption;
+  if (line && line.length > 46) line = line.slice(0, 45) + '…';
+  showOutcome(sceneHost, line, chips, auto ? meta.settings.speed * 1.6 : 1);
 }
 
 // ---------------- 卷轴与面板 ----------------
@@ -306,6 +415,8 @@ function log(e: LogEntry) {
   watchState();
   if (!replaying) {
     if (e.kind === 'death') {
+      pending = null;
+      clearOutcome();
       const L = game.L;
       const big = e.text.startsWith('隐藏结局') ? e.text.replace('隐藏结局 · ', '') : L.ended === '叩门' ? '叩门' : L.deathCause ?? '卒';
       moment({ kind: 'death', big, sub: `第 ${L.lifeNo} 世 · ${cnAge(L.age)}岁`, line: e.text, seal: L.ended === '叩门' ? '门' : '卒' });
@@ -322,8 +433,9 @@ function log(e: LogEntry) {
     scrollEl.appendChild(h);
     lastAge = e.age;
   }
+  if (pending && !replaying && !pending.caption && e.kind !== 'fate' && e.kind !== 'death') pending.caption = e.text;
   const d = document.createElement('div');
-  d.className = `entry k-${e.kind ?? 'normal'}`;
+  d.className = `entry k-${e.kind ?? 'normal'}${replaying ? '' : ' fresh'}`;
   d.textContent = e.text;
   scrollEl.appendChild(d);
   scrollEl.scrollTop = scrollEl.scrollHeight;
@@ -430,6 +542,7 @@ function locName(id: string, era?: string | null) {
 }
 
 async function pace() {
+  settle();
   await momentsIdle();
   if (!game) return;
   if (game.L.age <= 5) await sleep(auto ? 120 / meta.settings.speed : 260);
