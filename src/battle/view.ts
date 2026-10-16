@@ -15,16 +15,16 @@ function makePaper(ctx: CanvasRenderingContext2D) {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const g = c.getContext('2d')!;
-  g.fillStyle = '#f1eadb';
+  g.fillStyle = '#e1eaef';
   g.fillRect(0, 0, 256, 256);
   for (let i = 0; i < 30; i++) {
-    g.fillStyle = `rgba(160,130,80,${Math.random() * 0.018})`;
+    g.fillStyle = `rgba(86,109,138,${Math.random() * 0.018})`;
     g.beginPath();
     g.ellipse(Math.random() * 256, Math.random() * 256, 10 + Math.random() * 40, 6 + Math.random() * 20, Math.random() * 3, 0, Math.PI * 2);
     g.fill();
   }
   for (let i = 0; i < 900; i++) {
-    g.strokeStyle = `rgba(110,90,60,${Math.random() * 0.07})`;
+    g.strokeStyle = `rgba(61,76,97,${Math.random() * 0.07})`;
     g.lineWidth = Math.random() * 1.2;
     const x = Math.random() * 256;
     const y = Math.random() * 256;
@@ -39,7 +39,7 @@ function makePaper(ctx: CanvasRenderingContext2D) {
   return paperPattern;
 }
 
-// 远山：青绿山水，年代定色，境界越高越浓
+// 远山：蓝青水墨山水，年代定色，境界越高越浓
 const REALM_SAT = [0.4, 0.45, 0.6, 0.75, 0.9, 1];
 let look = ERA_LOOK.E1;
 
@@ -52,14 +52,14 @@ function drawMountains(ctx: CanvasRenderingContext2D, w: number, h: number, camX
   ctx.fillRect(0, 0, w, h * 0.55);
   const layers = [
     { par: 0.05, top: look.far, a: 0.8, amp: Math.min(140, h * 0.16), base: Math.min(0.36, 300 / h), f: 0.0035 },
-    { par: 0.1, top: mix(look.hills[0], '#9fb0aa', (1 - sat) * 0.7), a: 0.85, amp: Math.min(180, h * 0.2), base: Math.min(0.5, 420 / h), f: 0.0052 },
+    { par: 0.1, top: mix(look.hills[0], '#9cabb6', (1 - sat) * 0.7), a: 0.85, amp: Math.min(180, h * 0.2), base: Math.min(0.5, 420 / h), f: 0.0052 },
   ];
   for (const L of layers) {
     const off = -camX * L.par;
     const by = h * L.base - camY * L.par * 0.3;
     const lg = ctx.createLinearGradient(0, by - L.amp, 0, by + 140);
     lg.addColorStop(0, rgba(L.top, L.a));
-    lg.addColorStop(1, rgba(mix(look.hills[1], '#d9d2bd', 1 - sat), 0));
+    lg.addColorStop(1, rgba(mix(look.hills[1], '#c8ced1', 1 - sat), 0));
     ctx.fillStyle = lg;
     ctx.beginPath();
     ctx.moveTo(0, by + 140);
@@ -73,16 +73,22 @@ function drawMountains(ctx: CanvasRenderingContext2D, w: number, h: number, camX
     ctx.lineTo(w + 30, by + 140);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = 'rgba(30,34,39,0.22)';
+    // 峰顶积墨
+    const wash = ctx.createLinearGradient(0, by - L.amp, 0, by + 20);
+    wash.addColorStop(0, 'rgba(28,35,44,0.22)');
+    wash.addColorStop(1, 'rgba(28,35,44,0)');
+    ctx.fillStyle = wash;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(28,35,44,0.22)';
     ctx.lineWidth = 1.2;
     ctx.beginPath();
     pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
     ctx.stroke();
   }
-  // 地面淡淡一层石绿
+  // 地面淡淡一层青灰
   const gr = ctx.createLinearGradient(0, h * 0.45, 0, h);
   gr.addColorStop(0, rgba(look.hills[1], 0));
-  gr.addColorStop(1, rgba(mix(look.hills[1], '#c9c1a3', 1 - sat), kind === 'trial' ? 0.12 : 0.22));
+  gr.addColorStop(1, rgba(mix(look.hills[1], '#b5bbbe', 1 - sat), kind === 'trial' ? 0.12 : 0.22));
   ctx.fillStyle = gr;
   ctx.fillRect(0, h * 0.45, w, h * 0.55);
 }
@@ -102,7 +108,7 @@ function drawGround(ctx: CanvasRenderingContext2D, camX: number, camY: number, v
       const x = gx * cell + rnd() * cell;
       const y = gy * cell + rnd() * cell;
       const k = rnd();
-      ctx.strokeStyle = `rgba(30,34,39,${0.18 + rnd() * 0.15})`;
+      ctx.strokeStyle = `rgba(28,35,44,${0.18 + rnd() * 0.15})`;
       ctx.lineWidth = 1.2;
       ctx.beginPath();
       if (k < 0.7) {
@@ -126,7 +132,7 @@ function drawSplats(ctx: CanvasRenderingContext2D, splats: Splat[]) {
   for (const sp of splats) {
     const a = Math.max(0, 1 - sp.t / 9) * 0.32;
     if (a <= 0) continue;
-    ctx.fillStyle = `rgba(22,24,28,${a})`;
+    ctx.fillStyle = `rgba(19,26,35,${a})`;
     let hsh = sp.seed;
     const rnd = () => ((hsh = Math.imul(hsh ^ (hsh >>> 13), 1274126177) >>> 0) % 1000) / 1000;
     ctx.beginPath();
@@ -495,7 +501,7 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
   const camX = sim.px + (fx.shake > 0 ? (Math.random() - 0.5) * fx.shake * 28 : 0);
   const camY = sim.py + (fx.shake > 0 ? (Math.random() - 0.5) * fx.shake * 28 : 0);
   const zoom = Math.min(1, Math.max(0.62, Math.min(w, h) / 760));
-  ctx.fillStyle = makePaper(ctx) ?? '#f1eadb';
+  ctx.fillStyle = makePaper(ctx) ?? '#e1eaef';
   ctx.fillRect(0, 0, w, h);
   drawMountains(ctx, w, h, camX, camY, sim.spec.realm, sim.spec.kind);
   if (sim.spec.kind === 'trial') {
@@ -516,7 +522,7 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
   // 场地结界（靠近才显示）
   const dEdge = sim.arena - Math.hypot(sim.px, sim.py);
   if (dEdge < 320 || sim.phase === 2) {
-    ctx.strokeStyle = sim.phase === 2 ? 'rgba(20,20,30,0.7)' : `rgba(58,96,128,${0.6 * (1 - Math.max(0, dEdge) / 320)})`;
+    ctx.strokeStyle = sim.phase === 2 ? 'rgba(17,24,33,0.7)' : `rgba(58,96,128,${0.6 * (1 - Math.max(0, dEdge) / 320)})`;
     ctx.setLineDash([14, 10]);
     ctx.lineWidth = sim.phase === 2 ? 6 : 3;
     ctx.beginPath();
@@ -524,7 +530,7 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
     ctx.stroke();
     ctx.setLineDash([]);
     if (sim.phase === 2) {
-      ctx.fillStyle = 'rgba(20,24,34,0.55)';
+      ctx.fillStyle = 'rgba(20,27,36,0.55)';
       ctx.beginPath();
       ctx.arc(0, 0, ARENA * 2, 0, Math.PI * 2);
       ctx.arc(0, 0, sim.arena, 0, Math.PI * 2, true);
@@ -547,7 +553,7 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
     const a = Math.min(1, z.life / 0.5);
     if (z.kind === 'fire') ctx.fillStyle = `rgba(232,120,60,${0.28 * a})`;
     else if (z.kind === 'firewell') ctx.fillStyle = 'rgba(200,80,40,0.3)';
-    else if (z.kind === 'ink') ctx.fillStyle = 'rgba(30,30,45,0.25)';
+    else if (z.kind === 'ink') ctx.fillStyle = 'rgba(29,36,45,0.25)';
     else ctx.fillStyle = 'rgba(255,255,255,0.45)';
     ctx.beginPath();
     ctx.ellipse(z.x, z.y, z.r, z.r * 0.8, 0, 0, Math.PI * 2);
@@ -568,7 +574,7 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
     else if (e.type === 'lost') inkFigure(ctx, e.x, e.y, e.r, e.t, { color: '#7d93a8' });
     else if (e.type === 'mirror') inkFigure(ctx, e.x, e.y, e.r, e.t, { ...opts, color: '#2a3550' });
     else if (e.type === 'general') inkFigure(ctx, e.x, e.y, e.r, e.t, { ...opts, color: '#8a6d2a' });
-    else if (e.type === 'lord') inkFigure(ctx, e.x, e.y, e.r, e.t, { ...opts, color: e.invuln ? '#3b3b55' : '#14141f' });
+    else if (e.type === 'lord') inkFigure(ctx, e.x, e.y, e.r, e.t, { ...opts, color: e.invuln ? '#3b3b55' : '#121922' });
     else if (e.type === 'inkeye' || e.type === 'puppet') {
       ctx.fillStyle = e.hitFlash > 0 ? '#5a86b5' : INK;
       ctx.beginPath();
@@ -610,7 +616,7 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
       ctx.stroke();
     }
     if (e.elite || e.required || e.type === 'inkeye') {
-      ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      ctx.fillStyle = 'rgba(0,1,10,0.2)';
       ctx.fillRect(e.x - 26, e.y - e.r - 16, 52, 5);
       ctx.fillStyle = e.invuln ? '#777' : '#b03030';
       ctx.fillRect(e.x - 26, e.y - e.r - 16, 52 * Math.max(0, e.hp / e.maxHp), 5);
@@ -698,7 +704,7 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
       ctx.lineWidth = 2;
       ctx.stroke();
     } else if (f.kind === 'kill') {
-      ctx.fillStyle = `rgba(22,24,28,${0.6 * a})`;
+      ctx.fillStyle = `rgba(19,26,35,${0.6 * a})`;
       for (let i = 0; i < 8; i++) {
         const ang = i * 0.79 + f.x;
         const d = 34 * (1 - a) * (0.6 + (i % 3) * 0.25);
@@ -730,7 +736,7 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
   ctx.restore();
 
   if (fx.flash > 0) {
-    ctx.fillStyle = `rgba(250,248,240,${fx.flash * 0.6})`;
+    ctx.fillStyle = `rgba(241,247,250,${fx.flash * 0.6})`;
     ctx.fillRect(0, 0, w, h);
   }
   // 河雾的视野暗角

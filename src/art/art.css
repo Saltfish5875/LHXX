@@ -11,25 +11,25 @@
 }
 
 :root {
-  --paper: #f3ecdc;
-  --paper-2: #f8f3e7;
-  --paper-3: #fbf7ee;
-  --ink: #1e2227;
-  --ink-2: #5a5a55;
+  --paper: #e4eaed;
+  --paper-2: #ecf2f5;
+  --paper-3: #f0f6f9;
+  --ink: #1c232c;
+  --ink-2: #4c5a68;
   --blue: #2e6e8e; /* 石青 */
   --pale: #a9c3c8;
   --teal: #2e6e8e;
-  --jade: #fbf7ee;
-  --line: rgba(74, 64, 48, 0.2);
+  --jade: #f0f6f9;
+  --line: rgba(43, 55, 69, 0.2);
   --red: #b8382e; /* 朱砂 */
   --gold: #b8923a; /* 泥金 */
-  --green: #4f9a83; /* 石绿 */
+  --green: #3f8a8c; /* 石绿（偏青） */
   --purple: #7a5c8a;
-  --shadow: 0 8px 26px rgba(74, 60, 36, 0.14);
+  --shadow: 0 8px 26px rgba(40, 50, 63, 0.14);
   --serif: 'wenkai', 'LXGW WenKai', 'Kaiti SC', 'STKaiti', 'KaiTi', 'Songti SC', serif;
   --sans: 'wenkai', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --brush: 'brush', 'Kaiti SC', 'STKaiti', 'KaiTi', serif;
-  --paper-tex: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.37 0 0 0 0 0.24 0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
+  --paper-tex: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.2 0 0 0 0 0.3 0 0 0 0 0.4 0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 html,
@@ -47,7 +47,7 @@ body {
 
 /* 顶栏 */
 .topbar {
-  background: rgba(248, 243, 231, 0.82);
+  background: rgba(236, 242, 245, 0.82);
   border-bottom: 1px solid var(--line);
 }
 .brand {
@@ -65,7 +65,7 @@ body {
 .btn {
   background: var(--paper-3);
   color: var(--ink);
-  border: 1px solid rgba(30, 34, 39, 0.28);
+  border: 1px solid rgba(28, 35, 44, 0.28);
   border-radius: 4px;
   font-family: var(--serif);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset;
@@ -80,7 +80,7 @@ body {
 .btn.primary {
   background: var(--blue);
   border-color: #1f5672;
-  color: #fbf7ee;
+  color: #f0f6f9;
 }
 .btn.primary:hover:not(:disabled) {
   background: #245a75;
@@ -98,7 +98,7 @@ body {
   color: var(--ink);
 }
 .btn.ghost:hover:not(:disabled) {
-  background: rgba(30, 34, 39, 0.06);
+  background: rgba(28, 35, 44, 0.06);
   border-color: transparent;
 }
 
@@ -107,7 +107,7 @@ body {
   position: relative;
   flex: none;
   height: clamp(170px, 30vh, 260px);
-  border-bottom: 1px solid rgba(30, 34, 39, 0.35);
+  border-bottom: 1px solid rgba(28, 35, 44, 0.35);
   overflow: hidden;
   background: var(--paper);
 }
@@ -126,14 +126,14 @@ body {
   right: 0;
   bottom: 0;
   height: 10px;
-  background: linear-gradient(180deg, transparent, rgba(30, 34, 39, 0.08));
+  background: linear-gradient(180deg, transparent, rgba(28, 35, 44, 0.08));
   pointer-events: none;
 }
 
 /* 卷轴正文 */
 .scroll-wrap {
-  background: rgba(248, 243, 231, 0.78);
-  border-color: rgba(30, 34, 39, 0.18);
+  background: rgba(236, 242, 245, 0.78);
+  border-color: rgba(28, 35, 44, 0.18);
   border-radius: 4px;
 }
 .scroll {
@@ -168,7 +168,7 @@ body {
   content: '';
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, rgba(30, 34, 39, 0.35), rgba(30, 34, 39, 0));
+  background: linear-gradient(90deg, rgba(28, 35, 44, 0.35), rgba(28, 35, 44, 0));
 }
 .entry {
   animation: inkIn 0.6s ease both;
@@ -202,7 +202,7 @@ body {
   color: var(--ink-2);
   font-size: 14px;
   padding-left: 10px;
-  border-left: 2px solid rgba(30, 34, 39, 0.15);
+  border-left: 2px solid rgba(28, 35, 44, 0.15);
 }
 @keyframes inkIn {
   from {
@@ -219,8 +219,8 @@ body {
 
 /* 流年签与去向卡 */
 .deal {
-  background: linear-gradient(180deg, rgba(243, 236, 220, 0.85), rgba(248, 243, 231, 0.98));
-  border-top: 1px solid rgba(30, 34, 39, 0.25);
+  background: linear-gradient(180deg, rgba(228, 234, 237, 0.85), rgba(236, 242, 245, 0.98));
+  border-top: 1px solid rgba(28, 35, 44, 0.25);
 }
 .sign {
   font-family: var(--brush);
@@ -238,7 +238,7 @@ body {
   line-height: 22px;
   text-align: center;
   background: var(--red);
-  color: #fbf3e1;
+  color: #ebf1f4;
   border-radius: 3px;
   flex: none;
 }
@@ -250,22 +250,22 @@ body {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0)),
     var(--paper-tex),
-    #fbf6ea;
-  border: 1px solid rgba(30, 34, 39, 0.3);
+    #eff5f8;
+  border: 1px solid rgba(28, 35, 44, 0.3);
   border-radius: 4px;
   box-shadow:
-    inset 0 0 0 3px #fbf6ea,
-    inset 0 0 0 4px rgba(30, 34, 39, 0.16),
-    0 4px 12px rgba(74, 60, 36, 0.12);
+    inset 0 0 0 3px #eff5f8,
+    inset 0 0 0 4px rgba(28, 35, 44, 0.16),
+    0 4px 12px rgba(40, 50, 63, 0.12);
   animation: cardIn 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
   animation-delay: calc(var(--i, 0) * 70ms);
   overflow: hidden;
 }
 .card:hover {
   box-shadow:
-    inset 0 0 0 3px #fbf6ea,
-    inset 0 0 0 4px rgba(30, 34, 39, 0.3),
-    0 10px 22px rgba(74, 60, 36, 0.2);
+    inset 0 0 0 3px #eff5f8,
+    inset 0 0 0 4px rgba(28, 35, 44, 0.3),
+    0 10px 22px rgba(40, 50, 63, 0.2);
 }
 .card:active {
   transform: scale(0.97);
@@ -296,7 +296,7 @@ body {
   border-radius: 3px;
   padding: 0 6px;
   transform: rotate(-4deg);
-  color: #fbf3e1;
+  color: #ebf1f4;
 }
 .tag-ping .c-tag {
   background: #6f8590;
@@ -314,9 +314,9 @@ body {
 .tag-jie {
   border-color: rgba(184, 56, 46, 0.55);
   background:
-    linear-gradient(0deg, rgba(30, 34, 39, 0.16), rgba(30, 34, 39, 0) 40%),
+    linear-gradient(0deg, rgba(28, 35, 44, 0.16), rgba(28, 35, 44, 0) 40%),
     var(--paper-tex),
-    #fbf3ee;
+    #eff5f8;
 }
 .tag-jie .c-tag {
   background: var(--red);
@@ -327,23 +327,23 @@ body {
 }
 .tag-xiong {
   background:
-    linear-gradient(0deg, rgba(30, 34, 39, 0.28), rgba(30, 34, 39, 0) 55%),
+    linear-gradient(0deg, rgba(28, 35, 44, 0.28), rgba(28, 35, 44, 0) 55%),
     var(--paper-tex),
-    #eeebe4;
+    #e5ebee;
 }
 .tag-xiong .c-tag {
   background: var(--ink);
 }
 .tag-xiong .c-icon {
   color: var(--ink);
-  background: radial-gradient(circle at 50% 55%, rgba(30, 34, 39, 0.2), rgba(30, 34, 39, 0) 70%);
+  background: radial-gradient(circle at 50% 55%, rgba(28, 35, 44, 0.2), rgba(28, 35, 44, 0) 70%);
 }
 .tag-yin {
   border-color: rgba(184, 146, 58, 0.7);
   background:
     linear-gradient(180deg, rgba(243, 217, 138, 0.25), rgba(243, 217, 138, 0)),
     var(--paper-tex),
-    #fbf5e4;
+    #ecf2f5;
 }
 .tag-yin .c-tag {
   background: var(--gold);
@@ -369,8 +369,8 @@ body {
 
 /* 角色面板 */
 .panel {
-  background: rgba(248, 243, 231, 0.9);
-  border-color: rgba(30, 34, 39, 0.18);
+  background: rgba(236, 242, 245, 0.9);
+  border-color: rgba(28, 35, 44, 0.18);
   border-radius: 4px;
   font-family: var(--serif);
 }
@@ -379,9 +379,9 @@ body {
   font-family: var(--brush);
   font-weight: 400;
   background: var(--red);
-  color: #fbf3e1;
+  color: #ebf1f4;
   border: 0;
-  box-shadow: inset 0 0 0 2px rgba(251, 243, 225, 0.55);
+  box-shadow: inset 0 0 0 2px rgba(235, 241, 244, 0.55);
 }
 .seal {
   font-size: 26px;
@@ -394,7 +394,7 @@ body {
   color: var(--ink);
 }
 .bar {
-  background: rgba(30, 34, 39, 0.08);
+  background: rgba(28, 35, 44, 0.08);
   border-radius: 3px;
 }
 .bar > div {
@@ -428,19 +428,19 @@ body {
 
 /* 弹窗：一幅挂轴 */
 .modal {
-  background: rgba(30, 34, 39, 0.38);
+  background: rgba(28, 35, 44, 0.38);
 }
 .modal-box {
   position: relative;
   background:
     var(--paper-tex),
-    linear-gradient(180deg, #fbf7ee, #f4eddc);
-  border: 1px solid rgba(30, 34, 39, 0.25);
+    linear-gradient(180deg, #f0f6f9, #e5ebee);
+  border: 1px solid rgba(28, 35, 44, 0.25);
   border-radius: 3px;
   box-shadow:
-    inset 0 0 0 6px #f8f2e3,
-    inset 0 0 0 7px rgba(30, 34, 39, 0.12),
-    0 24px 60px rgba(30, 34, 39, 0.35);
+    inset 0 0 0 6px #eaf0f3,
+    inset 0 0 0 7px rgba(28, 35, 44, 0.12),
+    0 24px 60px rgba(28, 35, 44, 0.35);
 }
 .modal h2 {
   font-family: var(--brush);
@@ -460,7 +460,7 @@ body {
 }
 .opt {
   background: rgba(255, 255, 255, 0.55);
-  border: 1px solid rgba(30, 34, 39, 0.22);
+  border: 1px solid rgba(28, 35, 44, 0.22);
   border-radius: 3px;
   font-family: var(--serif);
   position: relative;
@@ -514,7 +514,7 @@ body {
   font-family: var(--brush);
   font-size: 14px;
   background: var(--red);
-  color: #fbf3e1;
+  color: #ebf1f4;
   border-radius: 3px;
   transform: rotate(-6deg);
   animation: stampIn 0.25s ease;
@@ -529,7 +529,7 @@ body {
 
 /* 轮回井：夜里的井边 */
 .style-well {
-  background: radial-gradient(ellipse at 50% 20%, rgba(159, 214, 230, 0.18), transparent 60%), rgba(14, 18, 26, 0.6);
+  background: radial-gradient(ellipse at 50% 20%, rgba(159, 214, 230, 0.18), transparent 60%), rgba(13, 20, 29, 0.6);
 }
 .style-well h2::before {
   content: '井';
@@ -548,22 +548,22 @@ body {
 }
 /* 墓志铭：一块石碑 */
 .style-epitaph {
-  background: rgba(14, 18, 26, 0.6);
+  background: rgba(13, 20, 29, 0.6);
 }
 .style-epitaph .modal-box {
   background:
     var(--paper-tex),
     linear-gradient(180deg, #c9cdcf, #a9afb3);
-  color: #2b3036;
+  color: #2a313a;
   border-radius: 40px 40px 4px 4px;
   box-shadow:
     inset 0 0 0 8px rgba(255, 255, 255, 0.15),
-    inset 0 0 0 9px rgba(30, 34, 39, 0.25),
-    0 24px 60px rgba(0, 0, 0, 0.45);
+    inset 0 0 0 9px rgba(28, 35, 44, 0.25),
+    0 24px 60px rgba(0, 1, 10, 0.45);
 }
 .style-epitaph h2,
 .style-epitaph .prompt-text {
-  color: #2b3036;
+  color: #2a313a;
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 .style-epitaph .opt {
@@ -581,7 +581,7 @@ body {
     inset 0 0 0 6px #f8efd6,
     inset 0 0 0 7px rgba(184, 146, 58, 0.55),
     0 0 50px rgba(243, 217, 138, 0.35),
-    0 24px 60px rgba(30, 34, 39, 0.35);
+    0 24px 60px rgba(28, 35, 44, 0.35);
 }
 .style-page h2,
 .style-ending h2,
@@ -589,17 +589,17 @@ body {
   color: #8a6a22;
 }
 .style-ending {
-  background: radial-gradient(ellipse at 50% 30%, rgba(243, 217, 138, 0.25), transparent 60%), rgba(14, 18, 26, 0.65);
+  background: radial-gradient(ellipse at 50% 30%, rgba(243, 217, 138, 0.25), transparent 60%), rgba(13, 20, 29, 0.65);
 }
 /* 出征准备：墨潮压境 */
 .style-battle {
-  background: linear-gradient(0deg, rgba(14, 16, 20, 0.75), rgba(14, 16, 20, 0.35));
+  background: linear-gradient(0deg, rgba(11, 18, 27, 0.75), rgba(11, 18, 27, 0.35));
 }
 .style-battle .modal-box {
   box-shadow:
-    inset 0 0 0 6px #f8f2e3,
+    inset 0 0 0 6px #eaf0f3,
     inset 0 0 0 7px rgba(184, 56, 46, 0.45),
-    0 24px 60px rgba(0, 0, 0, 0.5);
+    0 24px 60px rgba(0, 1, 10, 0.5);
 }
 .style-battle h2 {
   color: var(--red);
@@ -609,7 +609,7 @@ body {
 }
 
 .toast {
-  background: rgba(30, 34, 39, 0.92);
+  background: rgba(28, 35, 44, 0.92);
   font-family: var(--serif);
   border-radius: 3px;
 }
@@ -658,7 +658,7 @@ body {
   animation: blot 1.1s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
 }
 .m-blot circle {
-  fill: #15181c;
+  fill: #121922;
 }
 @keyframes blot {
   to {
@@ -739,9 +739,9 @@ body {
   font-family: var(--brush);
   font-size: 30px;
   background: var(--red);
-  color: #fbf3e1;
+  color: #ebf1f4;
   border-radius: 5px;
-  box-shadow: inset 0 0 0 2px rgba(251, 243, 225, 0.5);
+  box-shadow: inset 0 0 0 2px rgba(235, 241, 244, 0.5);
   opacity: 0;
   animation: stampIn 0.35s 0.9s cubic-bezier(0.3, 1.6, 0.5, 1) forwards;
 }
@@ -765,7 +765,7 @@ body {
 
 /* 各时刻的底色 */
 .m-birth {
-  background: var(--paper-tex), #f3ecdc;
+  background: var(--paper-tex), #e4eaed;
   color: var(--ink);
   animation: unroll 0.9s cubic-bezier(0.6, 0, 0.2, 1) both;
 }
@@ -791,7 +791,7 @@ body {
   top: 0;
   bottom: 0;
   width: 14px;
-  background: linear-gradient(90deg, #5a3e25, #8a6440 45%, #4a3220);
+  background: linear-gradient(90deg, #2c3747, #465971 45%, #242e3a);
 }
 .m-birth::before {
   left: 0;
@@ -800,13 +800,13 @@ body {
   right: 0;
 }
 .m-root {
-  background: radial-gradient(circle at 50% 46%, rgba(159, 214, 230, 0.55), rgba(243, 236, 220, 0.96) 55%), var(--paper);
+  background: radial-gradient(circle at 50% 46%, rgba(159, 214, 230, 0.55), rgba(228, 234, 237, 0.96) 55%), var(--paper);
   color: var(--ink);
 }
 .m-dao,
 .m-realm {
-  background: rgba(243, 236, 220, 0.94);
-  color: #fbf3e1;
+  background: rgba(228, 234, 237, 0.94);
+  color: #ebf1f4;
 }
 .m-dao .m-blot circle {
   fill: #1d4a5e;
@@ -839,8 +839,8 @@ body {
   text-shadow: 0 0 24px rgba(243, 217, 138, 0.6);
 }
 .m-battle {
-  background: rgba(20, 22, 26, 0.35);
-  color: #fbf3e1;
+  background: rgba(17, 24, 33, 0.35);
+  color: #ebf1f4;
 }
 .m-battle .m-sub {
   color: #e8796b;
@@ -852,8 +852,8 @@ body {
   font-size: clamp(44px, 14vw, 104px);
 }
 .m-death {
-  background: rgba(20, 22, 26, 0.2);
-  color: #efe8d8;
+  background: rgba(17, 24, 33, 0.2);
+  color: #e0e6e9;
 }
 .m-death .m-blot {
   animation-duration: 1.6s;
@@ -875,7 +875,7 @@ body {
   text-shadow: 0 0 20px rgba(243, 217, 138, 0.9);
 }
 .m-ending {
-  background: radial-gradient(circle at 50% 45%, #3a3326, #121418 70%);
+  background: radial-gradient(circle at 50% 45%, #222b37, #0f161f 70%);
   color: #f3d98a;
 }
 
@@ -886,10 +886,10 @@ body {
 .hud-top,
 .hud-bottom,
 .hud-msg {
-  background: rgba(248, 243, 231, 0.9);
-  border: 1px solid rgba(30, 34, 39, 0.22);
+  background: rgba(236, 242, 245, 0.9);
+  border: 1px solid rgba(28, 35, 44, 0.22);
   border-radius: 3px;
-  box-shadow: 0 4px 14px rgba(74, 60, 36, 0.12);
+  box-shadow: 0 4px 14px rgba(40, 50, 63, 0.12);
 }
 .mut {
   background: rgba(255, 255, 255, 0.6);
@@ -902,7 +902,7 @@ body {
   font-size: 18px;
 }
 .level-up {
-  background: var(--paper-tex), #f8f2e3;
+  background: var(--paper-tex), #eaf0f3;
   border: 1px solid rgba(184, 146, 58, 0.6);
   border-radius: 3px;
 }
@@ -917,7 +917,7 @@ body {
   font-size: 18px;
 }
 .touch-tip {
-  background: rgba(30, 34, 39, 0.78);
+  background: rgba(28, 35, 44, 0.78);
   font-family: var(--serif);
   border-radius: 3px;
 }
@@ -936,7 +936,7 @@ body {
 .hud-msg.big {
   font-size: 64px;
   color: var(--ink);
-  text-shadow: 0 0 18px rgba(248, 243, 231, 0.9);
+  text-shadow: 0 0 18px rgba(236, 242, 245, 0.9);
 }
 .lv-title {
   font-family: var(--brush);
@@ -944,19 +944,22 @@ body {
 
 @media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
   .brand {
-    font-size: 19px;
+    font-size: 17px;
     letter-spacing: 0;
     text-overflow: clip;
   }
+  .top-actions {
+    gap: 2px;
+  }
   .top-actions .btn {
     font-size: 16px;
-    padding: 6px 7px;
+    padding: 6px 5px;
   }
   .scene {
     height: clamp(150px, 26dvh, 230px);
   }
   .mstatus {
-    background: rgba(248, 243, 231, 0.95);
+    background: rgba(236, 242, 245, 0.95);
   }
   .ms-seal {
     font-size: 16px;
@@ -977,7 +980,7 @@ body {
     border-radius: 6px 6px 0 0;
   }
   .modal-box > .row:last-child {
-    background: #f6f0e1;
+    background: #e8eef1;
   }
   .modal h2 {
     font-size: 26px;

@@ -41,13 +41,13 @@ export function paperTexture(): HTMLCanvasElement {
   const g = c.getContext('2d')!;
   const r = rng(7);
   for (let i = 0; i < 40; i++) {
-    g.fillStyle = `rgba(160,130,80,${r() * 0.035})`;
+    g.fillStyle = `rgba(86,109,138,${r() * 0.035})`;
     g.beginPath();
     g.ellipse(r() * 256, r() * 256, 10 + r() * 40, 6 + r() * 20, r() * 3, 0, Math.PI * 2);
     g.fill();
   }
   for (let i = 0; i < 700; i++) {
-    g.strokeStyle = `rgba(110,90,60,${r() * 0.07})`;
+    g.strokeStyle = `rgba(61,76,97,${r() * 0.07})`;
     g.lineWidth = r() * 0.9;
     const x = r() * 256;
     const y = r() * 256;
@@ -82,7 +82,7 @@ function roof(g: G, x: number, y: number, w: number, h: number, col = C.ink) {
 function house(g: G, x: number, gy: number, s: number, opts: { lit?: boolean; banner?: string } = {}) {
   const w = 46 * s;
   const h = 26 * s;
-  g.fillStyle = '#efe5cf';
+  g.fillStyle = '#dce2e5';
   g.strokeStyle = rgba(C.ink, 0.75);
   g.lineWidth = 1.2;
   g.fillRect(x - w / 2, gy - h, w, h);
@@ -107,7 +107,7 @@ function house(g: G, x: number, gy: number, s: number, opts: { lit?: boolean; ba
     g.moveTo(bx, gy);
     g.lineTo(bx, gy - h * 2.2);
     g.stroke();
-    g.fillStyle = '#f6efe0';
+    g.fillStyle = '#e7edf0';
     g.fillRect(bx, gy - h * 2.2, 14 * s, 26 * s);
     g.strokeRect(bx, gy - h * 2.2, 14 * s, 26 * s);
     g.fillStyle = C.ink;
@@ -116,7 +116,7 @@ function house(g: G, x: number, gy: number, s: number, opts: { lit?: boolean; ba
     g.fillText(opts.banner, bx + 7 * s, gy - h * 2.2 + 17 * s);
   }
 }
-function pine(g: G, x: number, gy: number, s: number, col = '#2f5a48', r = Math.random) {
+function pine(g: G, x: number, gy: number, s: number, col = '#264c5a', r = Math.random) {
   g.strokeStyle = rgba(C.ink, 0.85);
   g.lineWidth = 3 * s;
   g.lineCap = 'round';
@@ -149,7 +149,7 @@ function pine(g: G, x: number, gy: number, s: number, col = '#2f5a48', r = Math.
     }
   }
 }
-function willow(g: G, x: number, gy: number, s: number, col = '#6e9a6a') {
+function willow(g: G, x: number, gy: number, s: number, col = '#5d8e98') {
   g.strokeStyle = rgba(C.ink, 0.8);
   g.lineWidth = 3 * s;
   g.beginPath();
@@ -170,13 +170,13 @@ function bamboo(g: G, x: number, gy: number, s: number) {
   for (let k = 0; k < 4; k++) {
     const bx = x + k * 7 * s;
     const hh = (50 + k * 9) * s;
-    g.strokeStyle = rgba('#3d6b4f', 0.85);
+    g.strokeStyle = rgba('#3a6670', 0.85);
     g.lineWidth = 2.2 * s;
     g.beginPath();
     g.moveTo(bx, gy);
     g.lineTo(bx + 3 * s, gy - hh);
     g.stroke();
-    g.fillStyle = rgba('#2f5a48', 0.8);
+    g.fillStyle = rgba('#264c5a', 0.8);
     for (let j = 1; j < 4; j++) {
       const ly = gy - hh * (j / 4);
       g.beginPath();
@@ -208,7 +208,7 @@ function pagoda(g: G, x: number, gy: number, s: number, levels = 5) {
   for (let i = 0; i < levels; i++) {
     const w = (34 - i * 4) * s;
     const h = 13 * s;
-    g.fillStyle = '#efe5cf';
+    g.fillStyle = '#dce2e5';
     g.fillRect(x - w / 2, y - h, w, h);
     g.strokeStyle = rgba(C.ink, 0.7);
     g.lineWidth = 1;
@@ -232,7 +232,7 @@ function paifang(g: G, x: number, gy: number, s: number, text = '') {
   g.fillRect(x - 30 * s, gy - 34 * s, 60 * s, 4 * s);
   roof(g, x, gy - 38 * s, 70 * s, 10 * s);
   if (text) {
-    g.fillStyle = '#f3e6c4';
+    g.fillStyle = '#dae0e3';
     g.fillRect(x - 9 * s, gy - 30 * s, 18 * s, 10 * s);
     g.fillStyle = C.ink;
     g.font = `${8 * s}px brush, serif`;
@@ -279,7 +279,7 @@ function boat(g: G, x: number, y: number, s: number) {
   g.lineTo(x + 18 * s, y);
   g.quadraticCurveTo(x, y + 4 * s, x - 20 * s, y);
   g.fill();
-  g.fillStyle = '#d9c9a2';
+  g.fillStyle = '#bcc2c5';
   g.beginPath();
   g.moveTo(x - 8 * s, y - 4 * s);
   g.quadraticCurveTo(x, y - 14 * s, x + 8 * s, y - 4 * s);
@@ -292,7 +292,7 @@ function boat(g: G, x: number, y: number, s: number) {
   g.stroke();
 }
 function crane(g: G, x: number, y: number, s: number, flap = 0) {
-  g.fillStyle = '#fbf8f0';
+  g.fillStyle = '#f1f7fa';
   g.strokeStyle = rgba(C.ink, 0.7);
   g.lineWidth = 1;
   g.beginPath();
@@ -359,7 +359,7 @@ function drawRange(g: G, pts: [number, number][], bottom: number, top: string, f
   const lg = g.createLinearGradient(0, minY, 0, bottom);
   lg.addColorStop(0, top);
   lg.addColorStop(0.55, foot);
-  lg.addColorStop(1, rgba('#f4eedf', 0));
+  lg.addColorStop(1, rgba('#e6ecef', 0));
   g.fillStyle = lg;
   g.beginPath();
   g.moveTo(pts[0][0], bottom);
@@ -367,7 +367,22 @@ function drawRange(g: G, pts: [number, number][], bottom: number, top: string, f
   g.lineTo(pts[pts.length - 1][0], bottom);
   g.closePath();
   g.fill();
-  // 勾勒山脊
+  // 墨晕：峰顶积墨、往下化开
+  const wash = g.createLinearGradient(0, minY, 0, minY + (bottom - minY) * 0.45);
+  wash.addColorStop(0, rgba(C.ink, inkA * 0.55));
+  wash.addColorStop(1, rgba(C.ink, 0));
+  g.fillStyle = wash;
+  g.fill();
+  // 勾勒山脊：先一道化开的淡墨，再一道实笔
+  g.save();
+  g.strokeStyle = rgba(C.ink, inkA * 0.35);
+  g.lineWidth = 5;
+  g.shadowColor = rgba(C.ink, inkA * 0.6);
+  g.shadowBlur = 8;
+  g.beginPath();
+  pts.forEach(([x, y], i) => (i ? g.lineTo(x, y + 2) : g.moveTo(x, y + 2)));
+  g.stroke();
+  g.restore();
   g.strokeStyle = rgba(C.ink, inkA);
   g.lineWidth = 1.2;
   g.beginPath();
@@ -388,7 +403,7 @@ function drawRange(g: G, pts: [number, number][], bottom: number, top: string, f
   }
 }
 function mistBand(g: G, w: number, y: number, h: number, night = false) {
-  const c = night ? '70,84,108' : '246,241,229';
+  const c = night ? '70,84,108' : '236,243,244';
   const lg = g.createLinearGradient(0, y - h, 0, y + h);
   lg.addColorStop(0, `rgba(${c},0)`);
   lg.addColorStop(0.5, `rgba(${c},${night ? 0.6 : 0.85})`);
@@ -514,12 +529,12 @@ export class Scene {
     const sunX = w * (0.58 + r() * 0.3);
     const sunY = h * (0.16 + r() * 0.1);
     if (L.night || s.loc === 'sickbed') {
-      g.fillStyle = 'rgba(246,238,214,0.9)';
+      g.fillStyle = 'rgba(228,234,237,0.9)';
       g.beginPath();
       g.arc(sunX, sunY, 11 * sc, 0, Math.PI * 2);
       g.fill();
       if (L.night) {
-        g.fillStyle = 'rgba(246,238,214,0.6)';
+        g.fillStyle = 'rgba(228,234,237,0.6)';
         for (let i = 0; i < 26; i++) g.fillRect(r() * w, r() * h * 0.5, 1.2, 1.2);
       }
     } else {
@@ -564,8 +579,8 @@ export class Scene {
     const far = mix(L.far, L.sky[1], 0.3);
     drawRange(g, ridge(r, w, h * 0.52, h * 0.32, 5), h * 0.72, far, rgba(L.far, 0.2), 0.12, r);
     mistBand(g, w, h * 0.56, h * 0.07, L.night);
-    const top2 = mix(mix(L.hills[0], '#b9c3bf', 1 - sat), L.sky[1], 0.35);
-    const foot2 = rgba(mix(L.hills[1], '#c9cbb8', 1 - sat), 0.55);
+    const top2 = mix(mix(L.hills[0], '#b4c0c8', 1 - sat), L.sky[1], 0.35);
+    const foot2 = rgba(mix(L.hills[1], '#bfc5c8', 1 - sat), 0.55);
     drawRange(g, ridge(r, w, h * 0.66, h * 0.36, 4), h * 0.86, top2, foot2, 0.35, r);
     if (L.redLeaves) {
       for (let i = 0; i < 40; i++) {
@@ -590,8 +605,8 @@ export class Scene {
         g.stroke();
       }
     }
-    const top3 = mix(L.hills[0], '#8f9a90', (1 - sat) * 0.8);
-    const foot3 = rgba(mix(L.hills[1], '#b8b49a', 1 - sat), 0.75);
+    const top3 = mix(L.hills[0], '#8c9aa6', (1 - sat) * 0.8);
+    const foot3 = rgba(mix(L.hills[1], '#a9b4ba', 1 - sat), 0.75);
     const near = ridge(r, w, h * 0.8, h * 0.3, 3).map(([x, y]) => [x, Math.max(y, x > w * 0.42 && x < w * 0.86 ? h * 0.76 : y)] as [number, number]);
     if (!L.sea) drawRange(g, near, h, top3, foot3, 0.55, r);
 
@@ -614,7 +629,7 @@ export class Scene {
         g.stroke();
       }
       // 岸
-      g.fillStyle = rgba(mix(L.hills[1], '#a59f86', 0.5), 0.9);
+      g.fillStyle = rgba(mix(L.hills[1], '#9eacb4', 0.5), 0.9);
       g.beginPath();
       g.moveTo(0, h);
       g.lineTo(0, gy - 4);
@@ -625,8 +640,8 @@ export class Scene {
       g.stroke();
     } else {
       const lg = g.createLinearGradient(0, gy - 8, 0, h);
-      lg.addColorStop(0, rgba(mix(L.hills[1], '#b7ae8e', 0.55), 0.9));
-      lg.addColorStop(1, rgba(mix(L.hills[1], C.ochre, 0.4), 0.95));
+      lg.addColorStop(0, rgba(mix(L.hills[1], '#a9b6bd', 0.55), 0.9));
+      lg.addColorStop(1, rgba(mix(L.hills[1], '#5a6b7a', 0.45), 0.95));
       g.fillStyle = lg;
       g.beginPath();
       g.moveTo(0, h);
@@ -660,7 +675,7 @@ export class Scene {
     g.save();
     g.font = `${17 * Math.min(1.2, sc)}px brush, 'Kaiti SC', KaiTi, serif`;
     g.textAlign = 'center';
-    g.fillStyle = L.night ? 'rgba(240,232,210,0.85)' : rgba(C.ink, 0.82);
+    g.fillStyle = L.night ? 'rgba(222,228,231,0.85)' : rgba(C.ink, 0.82);
     const tx = w - 22 * sc;
     let ty = 26 * sc;
     for (const ch of s.locName) {
@@ -700,7 +715,7 @@ export class Scene {
       return;
     }
     // 流云
-    g.fillStyle = L.night ? 'rgba(90,104,128,0.35)' : 'rgba(250,246,236,0.5)';
+    g.fillStyle = L.night ? 'rgba(90,104,128,0.35)' : 'rgba(239,245,248,0.5)';
     for (let i = 0; i < 4; i++) {
       const x = ((i * 157 + t * (6 + i * 2)) % (w + 240)) - 120;
       const y = h * (0.22 + i * 0.11);
@@ -776,7 +791,7 @@ export function stamp(g: G, x: number, y: number, size: number, ch: string) {
   const r = size * 0.18;
   g.roundRect?.(x - size / 2, y, size, size, r) ?? g.rect(x - size / 2, y, size, size);
   g.fill();
-  g.fillStyle = '#f6ecd6';
+  g.fillStyle = '#e3e9ec';
   g.font = `${size * 0.72}px brush, serif`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
@@ -794,10 +809,10 @@ function finishPaper(g: G, w: number, h: number) {
   }
   // 卷边暗角
   const vg = g.createLinearGradient(0, 0, w, 0);
-  vg.addColorStop(0, 'rgba(120,95,60,0.18)');
-  vg.addColorStop(0.04, 'rgba(120,95,60,0)');
-  vg.addColorStop(0.96, 'rgba(120,95,60,0)');
-  vg.addColorStop(1, 'rgba(120,95,60,0.18)');
+  vg.addColorStop(0, 'rgba(64,81,103,0.18)');
+  vg.addColorStop(0.04, 'rgba(64,81,103,0)');
+  vg.addColorStop(0.96, 'rgba(64,81,103,0)');
+  vg.addColorStop(1, 'rgba(64,81,103,0.18)');
   g.fillStyle = vg;
   g.fillRect(0, 0, w, h);
 }
@@ -830,7 +845,7 @@ function paintProp(g: G, s: SceneState, w: number, h: number, gy: number, sc: nu
       willow(g, x - 60 * sc, gy, sc);
       break;
     case 'road':
-      g.fillStyle = rgba('#d8c7a1', 0.8);
+      g.fillStyle = rgba('#bbc1c4', 0.8);
       g.beginPath();
       g.moveTo(w * 0.3, h);
       g.quadraticCurveTo(w * 0.55, gy, w * 0.72, h * 0.72);
@@ -887,7 +902,7 @@ function paintProp(g: G, s: SceneState, w: number, h: number, gy: number, sc: nu
       pine(g, x + 40 * sc, gy, sc * 1.1, undefined, r);
       break;
     case 'cross':
-      g.fillStyle = rgba('#d8c7a1', 0.8);
+      g.fillStyle = rgba('#bbc1c4', 0.8);
       for (const d of [-1, 1]) {
         g.beginPath();
         g.moveTo(w * 0.42, h);
@@ -896,7 +911,7 @@ function paintProp(g: G, s: SceneState, w: number, h: number, gy: number, sc: nu
         g.quadraticCurveTo(w * 0.6, gy, w * 0.56, h);
         g.fill();
       }
-      g.fillStyle = '#c9a877';
+      g.fillStyle = '#9aa8b0';
       g.fillRect(x - 2 * sc, gy - 34 * sc, 4 * sc, 34 * sc);
       g.fillRect(x - 14 * sc, gy - 32 * sc, 28 * sc, 8 * sc);
       g.strokeStyle = rgba(C.ink, 0.7);
@@ -917,11 +932,11 @@ function paintProp(g: G, s: SceneState, w: number, h: number, gy: number, sc: nu
     case 'forest': {
       // 林子深处的暗：一团晕开的淡墨，树画在上面
       const rg = g.createRadialGradient(w * 0.72, gy - 30 * sc, 10, w * 0.72, gy - 30 * sc, w * 0.4);
-      rg.addColorStop(0, 'rgba(30,34,39,0.45)');
-      rg.addColorStop(1, 'rgba(30,34,39,0)');
+      rg.addColorStop(0, 'rgba(28,35,44,0.45)');
+      rg.addColorStop(1, 'rgba(28,35,44,0)');
       g.fillStyle = rg;
-      g.fillRect(w * 0.3, gy - 120 * sc, w * 0.7, 130 * sc);
-      for (let i = 0; i < 7; i++) pine(g, w * (0.4 + i * 0.09), gy + (i % 2) * 4, sc * (0.9 + r() * 0.5), '#1f3a32', r);
+      g.fillRect(0, 0, w, gy + 10 * sc);
+      for (let i = 0; i < 7; i++) pine(g, w * (0.4 + i * 0.09), gy + (i % 2) * 4, sc * (0.9 + r() * 0.5), '#192f3c', r);
       break;
     }
     case 'realm':
@@ -961,7 +976,7 @@ function paintProp(g: G, s: SceneState, w: number, h: number, gy: number, sc: nu
       break;
     case 'rift': {
       // 画外裂隙：纸被撕开，后面是空白的虚无
-      g.fillStyle = '#14161a';
+      g.fillStyle = '#111821';
       g.beginPath();
       const pts: [number, number][] = [];
       for (let i = 0; i <= 10; i++) pts.push([x - 10 * sc + (r() - 0.5) * 18 * sc, h * 0.08 + i * (gy - h * 0.08) / 10]);
@@ -969,14 +984,14 @@ function paintProp(g: G, s: SceneState, w: number, h: number, gy: number, sc: nu
       pts.forEach(([px, py], i) => g.lineTo(px + (i % 2 ? 14 : 22) * sc, py));
       for (let i = pts.length - 1; i >= 0; i--) g.lineTo(pts[i][0] - (i % 2 ? 16 : 8) * sc, pts[i][1]);
       g.fill();
-      g.strokeStyle = '#fbf6ea';
+      g.strokeStyle = '#eff5f8';
       g.lineWidth = 2.5;
       g.stroke();
       break;
     }
     case 'gate':
       for (let i = 0; i < 5; i++) {
-        g.fillStyle = L.night ? 'rgba(90,104,128,0.5)' : 'rgba(250,246,236,0.7)';
+        g.fillStyle = L.night ? 'rgba(90,104,128,0.5)' : 'rgba(239,245,248,0.7)';
         g.beginPath();
         g.ellipse(w * (0.3 + i * 0.15), gy - 10 - (i % 2) * 14, 60, 12, 0, 0, Math.PI * 2);
         g.fill();
@@ -1082,7 +1097,7 @@ function drawHero(g: G, x: number, gy: number, sc: number, s: SceneState, t: num
     g.fillStyle = rg;
     g.fillRect(-30 * k, -44 * k, 60 * k, 60 * k);
   }
-  const robe = s.inDao ? '#fbfaf5' : st >= 3 ? '#c9b48f' : '#d8c9a8';
+  const robe = s.inDao ? '#f4fafd' : st >= 3 ? '#8f9eab' : '#b3bec6';
   const sway = Math.sin(t * 2.2) * 1.2;
   g.fillStyle = robe;
   g.strokeStyle = rgba(C.ink, 0.9);
@@ -1091,10 +1106,10 @@ function drawHero(g: G, x: number, gy: number, sc: number, s: SceneState, t: num
     // 襁褓
     g.beginPath();
     g.ellipse(0, -7 * k, 6 * k, 9 * k, 0.3, 0, Math.PI * 2);
-    g.fillStyle = '#e9d6b0';
+    g.fillStyle = '#cbd1d4';
     g.fill();
     g.stroke();
-    g.fillStyle = '#f5e8d2';
+    g.fillStyle = '#e0e6e9';
     g.beginPath();
     g.arc(2 * k, -14 * k, 4 * k, 0, Math.PI * 2);
     g.fill();
@@ -1126,14 +1141,14 @@ function drawHero(g: G, x: number, gy: number, sc: number, s: SceneState, t: num
     g.stroke();
   }
   // 头与发髻
-  g.fillStyle = '#f2e3c8';
+  g.fillStyle = '#dae0e3';
   g.strokeStyle = rgba(C.ink, 0.9);
   g.lineWidth = 1.2;
   g.beginPath();
   g.arc(bend, -27 * k, 4.6 * k, 0, Math.PI * 2);
   g.fill();
   g.stroke();
-  g.fillStyle = st === 4 ? '#d9d6cf' : C.ink;
+  g.fillStyle = st === 4 ? '#d0d6d9' : C.ink;
   g.beginPath();
   g.arc(bend, -32 * k, 2.6 * k, 0, Math.PI * 2);
   g.fill();
@@ -1150,7 +1165,7 @@ function drawHero(g: G, x: number, gy: number, sc: number, s: SceneState, t: num
 
 function drawInkTide(g: G, w: number, h: number, amt: number, t: number) {
   const top = h * (1 - amt);
-  g.fillStyle = 'rgba(22,24,28,0.88)';
+  g.fillStyle = 'rgba(19,26,35,0.88)';
   g.beginPath();
   g.moveTo(0, h);
   for (let x = 0; x <= w; x += 8) {
@@ -1161,7 +1176,7 @@ function drawInkTide(g: G, w: number, h: number, amt: number, t: number) {
   g.closePath();
   g.fill();
   // 晕开的淡墨边
-  g.fillStyle = 'rgba(22,24,28,0.25)';
+  g.fillStyle = 'rgba(19,26,35,0.25)';
   g.beginPath();
   g.moveTo(0, h);
   for (let x = 0; x <= w; x += 8) {
@@ -1172,7 +1187,7 @@ function drawInkTide(g: G, w: number, h: number, amt: number, t: number) {
   g.closePath();
   g.fill();
   // 墨点飞溅
-  g.fillStyle = 'rgba(22,24,28,0.7)';
+  g.fillStyle = 'rgba(19,26,35,0.7)';
   for (let i = 0; i < 8; i++) {
     const p = (t * 0.4 + i * 0.37) % 1;
     const x = ((i * 97) % w) + Math.sin(i) * 10;
@@ -1189,7 +1204,7 @@ function paintWell(g: G, w: number, h: number) {
   sky.addColorStop(1, '#2d3a4c');
   g.fillStyle = sky;
   g.fillRect(0, 0, w, h);
-  g.fillStyle = 'rgba(240,232,210,0.55)';
+  g.fillStyle = 'rgba(222,228,231,0.55)';
   const r = rng(11);
   for (let i = 0; i < 40; i++) g.fillRect(r() * w, r() * h * 0.6, 1.2, 1.2);
   drawRange(g, ridge(r, w, h * 0.7, h * 0.3, 5), h, 'rgba(60,78,96,0.8)', 'rgba(40,52,66,0.5)', 0.2, r);
@@ -1198,7 +1213,7 @@ function paintWell(g: G, w: number, h: number) {
   const sc = Math.max(0.75, Math.min(1.35, h / 190));
   // 井
   g.fillStyle = '#4d5866';
-  g.strokeStyle = 'rgba(10,12,16,0.8)';
+  g.strokeStyle = 'rgba(7,14,23,0.8)';
   g.lineWidth = 1.5;
   g.beginPath();
   g.ellipse(cx, gy - 22 * sc, 46 * sc, 12 * sc, 0, 0, Math.PI * 2);
@@ -1206,12 +1221,12 @@ function paintWell(g: G, w: number, h: number) {
   g.stroke();
   g.fillRect(cx - 46 * sc, gy - 22 * sc, 92 * sc, 24 * sc);
   g.strokeRect(cx - 46 * sc, gy - 22 * sc, 92 * sc, 24 * sc);
-  g.fillStyle = '#0e1116';
+  g.fillStyle = '#0c131c';
   g.beginPath();
   g.ellipse(cx, gy - 22 * sc, 38 * sc, 8 * sc, 0, 0, Math.PI * 2);
   g.fill();
   g.font = `${18 * sc}px brush, serif`;
-  g.fillStyle = 'rgba(240,232,210,0.85)';
+  g.fillStyle = 'rgba(222,228,231,0.85)';
   g.textAlign = 'center';
   g.fillText('轮', w - 22 * sc, 30 * sc);
   g.fillText('回', w - 22 * sc, 50 * sc);
@@ -1235,7 +1250,7 @@ function animWell(g: G, w: number, h: number, t: number) {
     g.fillRect(x - 12 * sc, y - 12 * sc, 24 * sc, 24 * sc);
   });
   // 司灯：井边提灯的小小人影
-  g.fillStyle = 'rgba(240,232,210,0.85)';
-  figureOther(g, cx + 64 * sc, gy, sc * 0.9, 'rgba(230,224,206,0.9)');
+  g.fillStyle = 'rgba(222,228,231,0.85)';
+  figureOther(g, cx + 64 * sc, gy, sc * 0.9, 'rgba(215,221,224,0.9)');
   lantern(g, cx + 74 * sc, gy - 22 * sc + Math.sin(t * 1.5), sc * 0.9, 1);
 }
