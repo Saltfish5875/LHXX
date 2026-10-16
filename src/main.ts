@@ -1,6 +1,8 @@
 import './style.css';
 import './art/art.css';
-import { Game, DealAction, DealView, IO, Prompt, skillName } from './game/engine';
+import { Game, IO, Prompt, skillName } from './game/engine';
+import { RollAction, RollView, autoDie, faceName, tileSceneLoc } from './game/board';
+import { HOLDINGS } from './data/board';
 import { loadLife, loadMeta, resetAll, saveMeta, lampOf } from './game/meta';
 import { runBattle } from './battle/view';
 import { FATE_BY_ID } from './data/fate';
@@ -97,6 +99,8 @@ async function choose(p: Prompt): Promise<number> {
     }
     // 自动模式：坊市等非重事件直接离开
     if (auto && p.key === 'market') setTimeout(() => done(p.options.length - 1), 200);
+    // 自动模式：棋盘上的经营类提示（天机格、产业）按默认选择
+    else if (auto && p.key && AUTO_KEYS.has(p.key) && p.autoPick !== undefined && !p.options[p.autoPick]?.disabled) setTimeout(() => done(p.autoPick!), 260 / meta.settings.speed);
   });
 }
 
@@ -182,39 +186,84 @@ async function allocate(points: number, base: Record<AttrKey, number>, origins: 
 }
 const ATTR_DESC: Record<AttrKey, string> = { gen: '寿元、气血、凡间存活', wu: '修炼速度、悟道', luck: '灵根、仙缘、改命、暴击', fam: '出身、初始灵石' };
 
-// ---------------- 去向卡 ----------------
+// ---------------- 命途棋盘 ----------------
 const TAG_CLASS: Record<string, string> = { 劫: 'tag-jie', 缘: 'tag-yuan', 凶: 'tag-xiong', 平: 'tag-ping', 引: 'tag-yin', 故: 'tag-gu' };
-const AUTO_SCORE: Record<Tendency, Record<string, number>> = {
-  safe: { 平: 2, 缘: 1, 劫: -3, 凶: -5 },
-  chance: { 平: 1, 缘: 3, 劫: -1, 凶: -3 },
-  war: { 平: 0, 缘: 1, 劫: 3, 凶: -2 },
-};
+// 十二格绕成一圈：左上角是岁首，顺时针
+const RING: [number, number][] = [[1, 1], [1, 2], [1, 3], [1, 4], [2, 4], [3, 4], [4, 4], [4, 3], [4, 2], [4, 1], [3, 1], [2, 1]];
+const AUTO_KEYS = new Set(['oracle', 'hold', 'build', 'holdBranch']);
 
-async function deal(v: DealView): Promise<DealAction> {
+async function roll(v: RollView): Promise<RollAction> {
   settle();
   await momentsIdle();
   setMomentSpeed(auto ? meta.settings.speed * 1.6 : 1);
-  scene.set({ mode: 'life', danger: v.gathered ? 1 : v.cards.some((c) => c.tag === '劫') ? 0.5 : v.cards.some((c) => c.tag === '凶') ? 0.3 : 0 });
+  const danger = v.gathered ? 1 : v.tiles.some((t) => t.tag === '劫') ? 0.4 : v.tiles.some((t) => t.tag === '凶') ? 0.3 : 0;
+  scene.set({ mode: 'life', danger });
   return new Promise((resolve) => {
     let peekMode = false;
+    let ruyiMode = false;
+    let focus: number | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let going = false;
+    const targetName = (slot: number) => (slot >= 12 ? '过岁首' : slot === v.pos ? '原地' : v.tiles[slot].name);
+    const ruyiTargets = [1, 2, 3, 4, 5, 6].map((n) => Math.min(12, v.pos + n));
     const render = () => {
+      const targets = ruyiMode ? ruyiTargets : v.targets;
+      const info = focus !== null ? v.tiles[focus] : null;
       dealEl.innerHTML = `
-        <div class="sign${v.gathered ? ' gathered' : ''}">${esc(v.sign)}</div>
-        <div class="cards">${v.cards
-          .map(
-            (c, i) => `<button class="card ${TAG_CLASS[c.tag]} ${peekMode ? 'peeking' : ''}" data-i="${i}" style="--i:${i}">
-              <span class="c-icon">${c.icon}</span><span class="c-name">${c.name}</span>
-              <span class="c-tag">${c.tag}</span><span class="c-hint">${esc(c.peekText ?? c.hint)}</span><kbd>${i + 1}</kbd></button>`,
-          )
-          .join('')}</div>
+        <div class="board${v.gathered ? ' gathered' : ''}${peekMode ? ' peeking' : ''}">
+          ${v.tiles
+            .map((t) => {
+              const [r, c] = RING[t.slot];
+              const cls = [
+                'tile',
+                `k-${t.kind}`,
+                t.tag ? TAG_CLASS[t.tag] : '',
+                t.slot === v.pos ? 'here' : '',
+                targets.includes(t.slot) && t.slot !== v.pos ? 'target' : '',
+                t.visited && t.slot !== v.pos ? 'visited' : '',
+                peekMode && t.canPeek ? 'peekable' : '',
+                t.peek ? 'peeked' : '',
+              ].filter(Boolean).join(' ');
+              return `<button class="${cls}" data-s="${t.slot}" style="grid-area:${r}/${c}">
+                <span class="t-month">${t.month}</span>
+                <span class="t-icon">${esc(t.icon)}</span>
+                <span class="t-name">${esc(t.name)}</span>
+                ${t.tag && t.tag !== '平' ? `<span class="t-tag">${t.tag}</span>` : ''}
+                ${t.lv ? `<span class="t-lv">${t.lv}</span>` : ''}
+                ${t.slot === v.pos ? '<i class="t-me">你</i>' : ''}
+              </button>`;
+            })
+            .join('')}
+          <div class="board-center">
+            <div class="sign${v.gathered ? ' gathered' : ''}">${esc(v.sign)}</div>
+            <div class="b-info">${
+              info
+                ? `<b>${esc(info.name)}</b> ${esc(info.peek ? '窥得：' + info.peek : info.hint)}`
+                : peekMode
+                  ? '点一格地点，窥它这一圈会发生什么'
+                  : ruyiMode
+                    ? '如意骰：任选点数'
+                    : `第 ${v.lap + 1} 圈 · 一圈 ${v.years} 年 · 已停 ${v.stops}/${v.maxStops}`
+            }</div>
+            <div class="dice">${
+              ruyiMode
+                ? ruyiTargets.map((s, i) => `<button class="die ruyi" data-r="${i + 1}"><b>${i + 1}</b><small>${esc(targetName(s))}</small></button>`).join('')
+                : v.dice
+                    .map((d, i) => `<button class="die${d === 0 ? ' f-stop' : d === 7 ? ' f-dun' : d === -1 ? ' f-jie' : ''}" data-d="${i}" style="--i:${i}"><b>${faceName(d)}</b><small>${esc(targetName(v.targets[i]))}</small></button>`)
+                    .join('')
+            }</div>
+          </div>
+        </div>
         <div class="deal-actions">
-          <button class="btn" data-a="reroll" ${v.rerolls <= 0 ? 'disabled' : ''}>改命·重发（${v.rerolls}）</button>
+          <button class="btn" data-a="reroll" ${v.rerolls <= 0 ? 'disabled' : ''}>改命·重掷（${v.rerolls}）</button>
           <button class="btn ${peekMode ? 'active' : ''}" data-a="peek" ${v.rerolls <= 0 ? 'disabled' : ''}>改命·窥命</button>
-          ${v.canRewind ? '<button class="btn" data-a="rewind">掌天瓶·回溯一年</button>' : ''}
+          ${v.ruyi > 0 ? `<button class="btn ${ruyiMode ? 'active' : ''}" data-a="ruyi">如意骰（${v.ruyi}）</button>` : ''}
+          ${v.canRewind ? '<button class="btn" data-a="rewind">掌天瓶·回溯</button>' : ''}
           <button class="btn ${auto ? 'active' : ''}" data-a="auto">${auto ? '自动中' : '自动'}（${TEND_NAMES[meta.settings.tendency]}）</button>
         </div>`;
-      dealEl.querySelectorAll<HTMLButtonElement>('.card').forEach((b) => (b.onclick = () => pick(Number(b.dataset.i))));
+      dealEl.querySelectorAll<HTMLButtonElement>('.tile').forEach((b) => (b.onclick = () => tapTile(Number(b.dataset.s))));
+      dealEl.querySelectorAll<HTMLButtonElement>('.die[data-d]').forEach((b) => (b.onclick = () => go(Number(b.dataset.d))));
+      dealEl.querySelectorAll<HTMLButtonElement>('.die[data-r]').forEach((b) => (b.onclick = () => go(-1, Number(b.dataset.r))));
       dealEl.querySelectorAll<HTMLButtonElement>('[data-a]').forEach((b) => {
         b.onclick = () => {
           const a = b.dataset.a;
@@ -222,6 +271,11 @@ async function deal(v: DealView): Promise<DealAction> {
           if (a === 'reroll') finish({ action: 'reroll' });
           else if (a === 'peek') {
             peekMode = !peekMode;
+            ruyiMode = false;
+            render();
+          } else if (a === 'ruyi') {
+            ruyiMode = !ruyiMode;
+            peekMode = false;
             render();
           } else if (a === 'rewind') finish({ action: 'rewind' });
           else if (a === 'auto') {
@@ -232,31 +286,56 @@ async function deal(v: DealView): Promise<DealAction> {
         };
       });
     };
-    let going = false;
-    const pick = async (i: number) => {
+    const tapTile = (slot: number) => {
       if (going) return;
+      const t = v.tiles[slot];
       if (peekMode) {
-        if (v.cards[i].peekText) return;
-        finish({ action: 'peek', idx: i });
-      } else {
-        going = true;
-        const c = v.cards[i];
-        sfx.pluck([0, 2, 4, 5][i] ?? 3, 0.45);
-        clearOutcome();
-        await stampCard([...dealEl.querySelectorAll<HTMLButtonElement>('.card')], i, auto);
-        sweep(sceneHost);
-        scene.set({ loc: c.loc, locName: c.name, danger: c.tag === '劫' ? 0.55 : c.tag === '凶' ? 0.3 : 0 });
-        beginChoice(c.name);
-        finish({ action: 'go', idx: i });
+        if (t.canPeek) finish({ action: 'peek', slot });
+        return;
       }
+      if (ruyiMode) {
+        const n = ruyiTargets.indexOf(slot);
+        if (n >= 0 && slot !== v.pos) return go(-1, n + 1);
+      } else {
+        const i = v.targets.indexOf(slot);
+        if (i >= 0 && slot !== v.pos && focus === slot) return go(i);
+      }
+      focus = focus === slot ? null : slot;
+      render();
+    };
+    // 落子：棋子一格一格走过去，再盖「定」字
+    const go = async (die: number, ruyi?: number) => {
+      if (going) return;
+      going = true;
+      const to = ruyi ? ruyiTargets[ruyi - 1] : v.targets[die];
+      const face = ruyi ?? v.dice[die];
+      sfx.pluck(Math.max(0, Math.min(6, face)), 0.45);
+      clearOutcome();
+      const tiles = [...dealEl.querySelectorAll<HTMLButtonElement>('.tile')];
+      const step = auto ? 50 / meta.settings.speed : 110;
+      for (let s = v.pos + 1; s <= Math.min(to, 11); s++) {
+        tiles.forEach((el) => el.classList.remove('here'));
+        tiles[s]?.classList.add('here', 'passing');
+        await sleep(step);
+      }
+      const act: RollAction = ruyi ? { action: 'ruyi', value: ruyi } : { action: 'go', die };
+      if (to < 12 && to !== v.pos) {
+        const t = v.tiles[to];
+        await stampCard([tiles[to]], 0, auto);
+        sweep(sceneHost);
+        scene.set({ loc: tileSceneLoc(t, v.stage), locName: t.name, danger: t.tag === '劫' ? 0.55 : t.tag === '凶' ? 0.3 : 0 });
+        beginChoice(t.name);
+      }
+      finish(act);
     };
     const onKey = (e: KeyboardEvent) => {
       if (modalEl.classList.contains('show') || battleEl.classList.contains('show')) return;
       const n = Number(e.key) - 1;
-      if (n >= 0 && n < v.cards.length) pick(n);
+      if (ruyiMode && n >= 0 && n < 6) go(-1, n + 1);
+      else if (n >= 0 && n < v.dice.length) go(n);
     };
     window.addEventListener('keydown', onKey);
-    function finish(a: DealAction) {
+    function finish(a: RollAction) {
       if (timer) clearTimeout(timer);
       window.removeEventListener('keydown', onKey);
       dealEl.innerHTML = '';
@@ -264,28 +343,18 @@ async function deal(v: DealView): Promise<DealAction> {
     }
     function scheduleAuto() {
       const L = game.L;
-      const lowHp = L.hp < L.maxHp * 0.3 && v.cards.some((c) => c.tag === '劫');
-      const story = v.cards.find((c) => c.tag === '引' || c.tag === '故');
-      if (v.gathered || lowHp || story) {
+      const reach = v.targets.filter((s) => s < 12).map((s) => v.tiles[s]);
+      const lowHp = L.hp < L.maxHp * 0.3 && reach.some((t) => t.tag === '劫');
+      const story = reach.find((t) => t.tag === '引' || t.tag === '故' || t.kind === 'ruin');
+      if ((v.gathered && v.stops === 0) || lowHp || story) {
         auto = false;
         render();
-        flash(v.gathered ? '劫气积聚，自动暂停' : story ? `「${story.tag}」卡出现，自动暂停` : '气血低于三成，自动暂停');
+        flash(story ? `「${story.name}」就在前面，自动暂停` : lowHp ? '气血低于三成，自动暂停' : '劫气积聚，自动暂停');
         return;
       }
       timer = setTimeout(() => {
-        if (going) return;
-        const sc = AUTO_SCORE[meta.settings.tendency];
-        let best = 0;
-        let bs = -99;
-        v.cards.forEach((c, i) => {
-          const s = sc[c.tag] + Math.random() * 0.1;
-          if (s > bs) {
-            bs = s;
-            best = i;
-          }
-        });
-        void pick(best);
-      }, 450 / meta.settings.speed);
+        if (!going) void go(autoDie(v, meta.settings.tendency, L, Math.random));
+      }, 380 / meta.settings.speed);
     }
     render();
     if (auto) scheduleAuto();
@@ -463,6 +532,17 @@ function faceBlock(L: LifeState) {
   return era ? `<div class="era"><b>${era.name}</b><span>${era.note}</span></div>${hook}${met}` : '';
 }
 
+// 命途：骰子、本命格、产业
+function boardBlock(L: LifeState): string {
+  const d = L.dice;
+  if (!d) return '';
+  const chips = [`<span class="chip">骰 ${d.n} 颗${d.stopFace ? '·止遁' : ''}</span>`];
+  if (d.ruyi) chips.push(`<span class="chip">如意骰 ${d.ruyi}</span>`);
+  if (L.fateTile) chips.push(`<span class="chip">本命格 ${L.fateTile.lv} 级${L.fateTile.dusty ? '·蒙尘' : ''}</span>`);
+  for (const h of L.holdings ?? []) chips.push(`<span class="chip hold" title="${esc(HOLDINGS[h.type].yieldText)}">${esc(h.name)} ${h.lv} 级${h.branch !== undefined ? '·' + HOLDINGS[h.type].branches[h.branch].label : ''}</span>`);
+  return `<h4>命途</h4><div class="chips">${chips.join('')}</div>`;
+}
+
 function refresh() {
   const L = game?.L;
   if (L && replaying) {
@@ -518,7 +598,7 @@ function refresh() {
     <div class="p-grid">
       <span>出身</span><b>${L.origin}</b>
       <span>灵根</span><b>${root}</b>
-      <span>灵石</span><b>${L.stones}</b>
+      <span>${L.inDao ? '灵石' : '银两'}</span><b>${L.stones}</b>
       <span>功德</span><b>${L.merit}</b>
       <span>人情</span><b>${L.favor}</b>
       <span>斩墨</span><b>${L.kills}</b>
@@ -529,6 +609,7 @@ function refresh() {
     </div>
     <div class="d-only">${faceBlock(L)}</div>
     <h4>天赋</h4><div class="chips">${L.talents.map((t) => `<span class="chip g-${TALENT_BY_ID[t].grade}" title="${TALENT_BY_ID[t].desc}">${TALENT_BY_ID[t].name}</span>`).join('')}</div>
+    ${boardBlock(L)}
     ${L.skills.length ? `<h4>法宝</h4><div class="chips">${L.skills.map((s) => `<span class="chip">${skillName(s.id)} ${CN_NUM[s.lvl]}阶</span>`).join('')}</div>` : ''}
     ${wish ? `<h4>心愿</h4><div class="wish ${L.wish!.done ? 'done' : ''}">「${wish.name}」${wish.cond}<br>${bar(L.wish!.progress, 1, 'wishbar', L.wish!.done ? '圆满' : Math.round(L.wish!.progress * 100) + '%')}</div>` : ''}
     ${L.traces.length ? `<h4>本世痕迹</h4><div class="chips">${L.traces.map((t) => `<span class="chip trace" title="${MUTATORS.find((m) => m.trace === t.tag)?.name ?? ''}">${MUTATORS.find((m) => m.trace === t.tag)?.name ?? t.tag}</span>`).join('')}</div>` : ''}
@@ -597,9 +678,14 @@ function showPast() {
   const acqList = acqs.length
     ? `<ul>${acqs.map((a) => `<li><b>${esc(a.name)}</b>（${RELATION_NAMES[a.relation]}）· 第 ${a.life} 世 · ${ERA_BY_ID[a.era]?.name ?? a.era} · 已 ${meta.lives - a.lastSeen} 世未见</li>`).join('')}</ul>`
     : '<p class="muted">还没有欠着谁，也没有谁欠着你。</p>';
+  const legs = meta.legacies ?? [];
+  const legList = legs.length
+    ? `<ul>${legs.map((l) => `<li><b>${esc(l.name)}</b>（${HOLDINGS[l.type].name} ${l.lv} 级）· 第 ${l.life} 世 · ${ERA_BY_ID[l.era]?.name ?? l.era}${l.keep ? ' · 秘藏留给了后人' : ''}</li>`).join('')}</ul>`
+    : '<p class="muted">还没有留下什么。把产业经营到三级以上，死后会变成后世路上的遗迹。</p>';
   const box = openModal(`<h2>前世书</h2>
     <h3>千面录 · ${kinds}/16 种引子</h3><p class="muted">集齐 3 种出现「说书人」，6 种开启轮回盘「择世」，12 种得称号「一人千面」。</p><div class="faces">${faceGrid}</div>
     <h3>故人 · ${acqs.length}/8</h3>${acqList}
+    <h3>遗泽 · ${legs.length}/6</h3>${legList}
     <h3>墓志铭</h3><div class="epis">${list}</div><div class="row"><button class="btn primary">关闭</button></div>`, 'wide');
   (box.querySelector('.btn.primary') as HTMLButtonElement).onclick = closeModal;
 }
@@ -609,7 +695,7 @@ function showSettings() {
     <div class="set-row"><b>自动倾向</b>${(['safe', 'chance', 'war'] as Tendency[]).map((t) => `<label><input type="radio" name="t" value="${t}" ${meta.settings.tendency === t ? 'checked' : ''}>${TEND_NAMES[t]}</label>`).join('')}</div>
     <div class="set-row"><b>音效</b><label><input type="radio" name="snd" value="on" ${soundOn() ? 'checked' : ''}>开</label><label><input type="radio" name="snd" value="off" ${!soundOn() ? 'checked' : ''}>关</label></div>
     <div class="set-row"><b>自动速度</b>${[1, 2, 4].map((s) => `<label><input type="radio" name="s" value="${s}" ${meta.settings.speed === s ? 'checked' : ''}>${s}×</label>`).join('')}</div>
-    <p class="muted">自动模式只替你选去向卡；抉择、出征准备、劫气积聚年和气血不足时会停下来等你。战斗：WASD / 方向键移动，触屏拖动；Q 收剑（不杀生），P 暂停。</p>
+    <p class="muted">自动模式替你掷骰选格、打理产业和天机格；抉择、遗迹、引子与故人、出征准备、劫气积聚的岁首和气血不足时会停下来等你。战斗：WASD / 方向键移动，触屏拖动；Q 收剑（不杀生），P 暂停。</p>
     <div class="row"><button class="btn danger" data-reset>清空存档</button><button class="btn primary" data-ok>好</button></div>`, 'mid');
   box.querySelectorAll<HTMLInputElement>('input[name=t]').forEach((r) => (r.onchange = () => { meta.settings.tendency = r.value as Tendency; saveMeta(meta); }));
   box.querySelectorAll<HTMLInputElement>('input[name=s]').forEach((r) => (r.onchange = () => { meta.settings.speed = Number(r.value); saveMeta(meta); }));
@@ -635,7 +721,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-open]').forEach((b) => {
 // ---------------- 启动 ----------------
 const io: IO = {
   choose,
-  deal,
+  roll,
   battle: async (spec) => {
     await momentsIdle();
     const KIND: Record<string, string> = { beast: '妖潮', duel: '斗法', trial: '天劫' };

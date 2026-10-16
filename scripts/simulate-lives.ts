@@ -1,6 +1,7 @@
 // 无界面跑完整人生：用真实的人生引擎与战斗逻辑（自动驾驶）批量模拟，输出 R12 验证指标
 // 用法：npm run sim -- [世数=40] [倾向=safe|chance|war|all] [种子=1]
-import { Game, IO, DealView, DealAction, Prompt } from '../src/game/engine';
+import { Game, IO, Prompt } from '../src/game/engine';
+import { RollAction, RollView, autoDie } from '../src/game/board';
 import { newMeta } from '../src/game/meta';
 import { autoBattle } from '../src/battle/sim';
 import { setSeed, rand } from '../src/game/rng';
@@ -19,12 +20,6 @@ const args = process.argv.slice(2);
 const LIVES = Number(args[0] ?? 40);
 const TEND = (args[1] ?? 'all') as Tendency | 'all';
 const SEED = Number(args[2] ?? 1);
-
-const SCORE: Record<Tendency, Record<string, number>> = {
-  safe: { 平: 2, 缘: 1, 劫: -3, 凶: -5, 引: 2.5, 故: 2.5 },
-  chance: { 平: 1, 缘: 3, 劫: -1, 凶: -3, 引: 3.5, 故: 3.5 },
-  war: { 平: 0, 缘: 1, 劫: 3, 凶: -2, 引: 2, 故: 2 },
-};
 
 interface Stats {
   decisions: number;
@@ -61,13 +56,22 @@ interface Stats {
   flavorTotal: number;
   flavorDistinct: number;
   trialBattles: number;
+  laps: number;
+  stops: number;
+  kinds: Record<string, number>;
+  holdLives: number;
+  holdMax: number[];
+  ruinVisits: number;
+  dice: number[];
+  laps0: number;
+  btitles: Record<string, number>;
 }
 
 async function run(tend: Tendency): Promise<Stats> {
   setSeed(SEED * 1000 + tend.length);
   const meta = newMeta();
   meta.settings.tendency = tend;
-  const st: Stats = { decisions: 0, rounds: 0, nothing: 0, battles: 0, battlesWon: 0, deaths: {}, ages: [], realms: [], pagesByLife: [], firstRepeatLife: null, wishes: 0, wishesDone: 0, endings: [], errors: 0, trials: {}, cardsTotal: 0, cardsFace: 0, hookLives: 0, hookDone: 0, reunions: 0, acqResolved: 0, eras: {}, eraRepeat: 0, fates: {}, mismatch: 0, blocked: 0, blockedBy: {}, recovered: 0, retired: 0, choicesSeen: 0, choicesRepeat: 0, flavorTotal: 0, flavorDistinct: 0, trialBattles: 0 };
+  const st: Stats = { decisions: 0, rounds: 0, nothing: 0, battles: 0, battlesWon: 0, deaths: {}, ages: [], realms: [], pagesByLife: [], firstRepeatLife: null, wishes: 0, wishesDone: 0, endings: [], errors: 0, trials: {}, cardsTotal: 0, cardsFace: 0, hookLives: 0, hookDone: 0, reunions: 0, acqResolved: 0, eras: {}, eraRepeat: 0, fates: {}, mismatch: 0, blocked: 0, blockedBy: {}, recovered: 0, retired: 0, choicesSeen: 0, choicesRepeat: 0, flavorTotal: 0, flavorDistinct: 0, trialBattles: 0, laps: 0, stops: 0, kinds: {}, holdLives: 0, holdMax: [0, 0, 0, 0, 0, 0], ruinVisits: 0, dice: [0, 0, 0, 0], laps0: 0, btitles: {} };
   let prevChoices = new Set<string>();
   let curChoices = new Set<string>();
   let lifeLogs: string[] = [];
@@ -88,6 +92,7 @@ async function run(tend: Tendency): Promise<Stats> {
         return buy.length ? buy[0].i : p.options.length - 1;
       }
       if (p.key === 'market') return p.options.length - 1;
+      if (p.autoPick !== undefined && !p.options[p.autoPick]?.disabled) return p.autoPick;
       // 铸道基：多数玩家会尽量顺着本命走
       if (p.key === 'daoji') return !p.options[1]?.disabled && rand() < 0.7 ? 1 : 0;
       if (p.title.startsWith('瓶颈')) return 0;
@@ -103,22 +108,24 @@ async function run(tend: Tendency): Promise<Stats> {
       }
       return en[Math.floor(rand() * en.length)]?.i ?? 0;
     },
-    async deal(v: DealView): Promise<DealAction> {
+    async roll(v: RollView): Promise<RollAction> {
+      if (v.stops === 0) st.laps += 1;
       st.rounds += 1;
-      st.cardsTotal += v.cards.length;
-      st.cardsFace += v.cards.filter((c) => c.tag === '引' || c.tag === '故').length;
-      const tags = new Set(v.cards.map((c) => c.tag));
-      if (tags.size > 1) st.decisions += 1;
-      let best = 0;
-      let bs = -99;
-      v.cards.forEach((c, i) => {
-        const s = SCORE[tend][c.tag] + rand() * 0.1;
-        if (s > bs) {
-          bs = s;
-          best = i;
-        }
-      });
-      return { action: 'go', idx: best };
+      const L = g.L;
+      if (new Set(v.targets).size > 1) st.decisions += 1;
+      const tiles = v.tiles.filter((t) => t.kind === 'loc');
+      st.cardsTotal += tiles.length;
+      st.cardsFace += tiles.filter((t) => t.tag === '引' || t.tag === '故').length;
+      const die = autoDie(v, tend, L, rand);
+      const to = v.targets[die];
+      if (to < 12 && to !== v.pos) {
+        st.stops += 1;
+        const t = v.tiles[to];
+        const k = t.kind === 'loc' ? `loc:${t.tag ?? '平'}` : t.kind;
+        st.kinds[k] = (st.kinds[k] ?? 0) + 1;
+        if (t.kind === 'ruin') st.ruinVisits += 1;
+      }
+      return { action: 'go', die };
     },
     async battle(spec: BattleSpec) {
       st.battles += 1;
@@ -127,6 +134,10 @@ async function run(tend: Tendency): Promise<Stats> {
       if (DEBUG) console.log("  [战斗结果]", r.win, r.hp);
       if (r.win) st.battlesWon += 1;
       if (spec.title === '入门试炼') st.trialBattles += 1;
+      else if (spec.kind !== 'trial') {
+        const k = spec.title.includes('·') ? spec.title.split(' · ')[0] + '·遗迹' : spec.title.startsWith('守') ? '守业' : spec.title;
+        st.btitles[k] = (st.btitles[k] ?? 0) + 1;
+      }
       if (spec.kind === 'trial') {
         st.trialBattles += 1;
         const k = `${spec.realm}${spec.boss ? ':' + spec.boss : ''}`;
@@ -151,6 +162,8 @@ async function run(tend: Tendency): Promise<Stats> {
       if (DEBUG) console.log("  ", e.text.slice(0, 80));
       if ((e.kind ?? 'normal') === 'normal' && !e.text.includes('你选择了')) lifeLogs.push(e.text);
       if (NOTHING.has(e.text)) st.nothing += 1;
+      if (e.text.includes('劫气拦住')) st.btitles['(拦路)'] = (st.btitles['(拦路)'] ?? 0) + 1;
+      if (e.text.startsWith('流年：劫气积聚')) st.btitles['(积聚圈)'] = (st.btitles['(积聚圈)'] ?? 0) + 1;
     },
     refresh() {},
     async pace() {},
@@ -171,6 +184,9 @@ async function run(tend: Tendency): Promise<Stats> {
       break;
     }
     const L = g.L;
+    if (L.holdings?.length) st.holdLives += 1;
+    st.holdMax[Math.max(0, ...(L.holdings ?? []).map((h) => h.lv))] += 1;
+    st.dice[L.dice?.n ?? 0] += 1;
     st.fates[L.fate ?? '?'] = (st.fates[L.fate ?? '?'] ?? 0) + 1;
     if (L.capReason === 'daoji' || (L.daoji && L.fate && FATE_BY_ID[L.fate].paths.length && !FATE_BY_ID[L.fate].paths.includes(L.daoji))) st.mismatch += 1;
     if (L.flags.blockedAt) {
@@ -227,6 +243,10 @@ function report(tend: Tendency, st: Stats, meta: ReturnType<typeof newMeta>) {
   console.log(`天劫胜/场（按境界）：${Object.entries(st.trials).sort().map(([k, [w, n]]) => `${k} ${w}/${n}`).join('，')}`);
   console.log(`一人千面：有引子的世 ${((st.hookLives / Math.max(1, n)) * 100).toFixed(0)}%（目标 50～65%）；引子了结率 ${((st.hookDone / Math.max(1, st.hookLives)) * 100).toFixed(0)}%（目标 30～50%）；每世故人再遇 ${(st.reunions / Math.max(1, n)).toFixed(2)}（目标 0.5～1.2），了结 ${st.acqResolved}；「引」「故」卡占比 ${((st.cardsFace / Math.max(1, st.cardsTotal)) * 100).toFixed(1)}%（目标 ≤ 8%）`);
   console.log(`年代分布 ${JSON.stringify(st.eras)}；与上一世同年代 ${st.eraRepeat} 次（目标 0）；千面录 ${new Set((meta.faces ?? []).map((f) => f.hook)).size} 种引子，故人在册 ${(meta.acquaintances ?? []).length}`);
+  const ks = Object.entries(st.kinds).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${((v / Math.max(1, st.stops)) * 100).toFixed(0)}%`).join('，');
+  console.log(`棋盘：每世 ${(st.laps / Math.max(1, n)).toFixed(1)} 圈（目标 50～70），每圈停 ${(st.stops / Math.max(1, st.laps)).toFixed(2)} 格；停格分布 ${ks}`);
+  console.log(`产业：置过产业的世 ${st.holdLives}；最高等级分布 0..5 = ${st.holdMax.join('/')}；遗迹进入 ${st.ruinVisits} 次，遗泽在册 ${(meta.legacies ?? []).length}；终局骰数 1/2/3 = ${st.dice.slice(1).join('/')}`);
+  console.log(`遭遇战来源：${Object.entries(st.btitles).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, v]) => `${k} ${v}`).join('，')}`);
   if (st.errors) console.log(`!!! 出错 ${st.errors} 次`);
 }
 

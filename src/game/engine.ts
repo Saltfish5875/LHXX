@@ -1,4 +1,4 @@
-// 人生层 + 轮回层：一年一个决定（流年签 → 去向卡 → 改命 → 前往），死后回到轮回井
+// 人生层 + 轮回层：一圈命途棋盘（岁首 → 掷骰走格 → 停下结算），死后回到轮回井
 import { ATTR_NAMES, AttrKey, CN_NUM, REALMS, REALM_SCORE, ROOTS, SCHOOL_NAMES, School, TALENTS, TALENT_BY_ID, Talent, GRADE_WEIGHT, cnAge, gradeOf, originOf } from '../data/core';
 import { COMPANION_NAMES, COMPANION_QUOTE, CompanionId, ENDINGS, HIDDEN, LEGENDS, MUTATORS, Mutator, OPENING, PAGES, REGRETS, SILU_DAILY, SILU_TRIGGER, VOLUME_NAMES, WISHES, WishDef } from '../data/content';
 import { BATTLE_TITLES, CHOICES, ENCOUNTERS, FLAVORS, LOCATIONS, LOC_BY_ID, LifeEvent, LocationDef, NOTHING_CULT, NOTHING_MORTAL } from '../data/events';
@@ -16,7 +16,8 @@ const ALL_FLAVORS: LifeEvent[] = [...FLAVORS, ...FLAVORS_MORE];
 const ALL_NOTHING_MORTAL = [...NOTHING_MORTAL, ...NOTHING_MORTAL_MORE];
 const ALL_NOTHING_CULT = [...NOTHING_CULT, ...NOTHING_CULT_MORE];
 const LOOKUP: LifeEvent[] = [...ALL_CHOICES, ...ALL_FLAVORS, ...ENCOUNTERS, ...FATE_EVENTS, ...TURN_EVENTS];
-import { chance, pick, rand, randInt, shuffle, weighted } from './rng';
+import { chance, pick, rand, randInt, weighted } from './rng';
+import { RollAction, RollView, boardLap, recordLegacies } from './board';
 import { UNLOCKS, WHEEL, hasPage, lampOf, saveLife, saveMeta, wheelPrice } from './meta';
 
 export interface PromptOption {
@@ -31,20 +32,12 @@ export interface Prompt {
   style?: 'event' | 'milestone' | 'battle' | 'well' | 'page' | 'ending' | 'epitaph' | 'legend';
   key?: string; // 自动模式用于判断是否暂停
   important?: boolean;
+  autoPick?: number; // 自动模式 / 模拟脚本的默认选择（棋盘经营类提示）
 }
-
-export interface DealView {
-  sign: string;
-  cards: (Card & { name: string; icon: string; hint: string; peekText?: string })[];
-  rerolls: number;
-  canRewind: boolean;
-  gathered: boolean;
-}
-export type DealAction = { action: 'go'; idx: number } | { action: 'reroll' } | { action: 'peek'; idx: number } | { action: 'rewind' };
 
 export interface IO {
   choose(p: Prompt): Promise<number>;
-  deal(v: DealView): Promise<DealAction>;
+  roll(v: RollView): Promise<RollAction>;
   battle(spec: BattleSpec): Promise<BattleResult>;
   pickTalents(cands: Talent[], heritage: string | null): Promise<string[]>;
   allocate(points: number, base: Record<AttrKey, number>, origins: string[]): Promise<{ attrs: Record<AttrKey, number>; origin: string | null }>;
@@ -66,14 +59,11 @@ export class Game {
   io: IO;
   sim = false;
   private snapshot: string | null = null;
-  private prevSnapshot: string | null = null;
-  private battleSinceSnap = false;
-  private fairBonus = 0;
-  private sign: { calamity: string[]; chance: string[]; omen: string[]; gathered: boolean } = { calamity: [], chance: [], omen: [], gathered: false };
-  private rerolls = 0;
+  prevSnapshot: string | null = null;
+  battleSinceSnap = false;
+  fairBonus = 0;
+  rerolls = 0;
   pendingWish: string | null = null;
-  private hookOffered = false;
-  private acqCard: Card | null = null;
 
   constructor(meta: MetaState, io: IO) {
     this.M = meta;
@@ -422,10 +412,12 @@ export class Game {
       if (this.tflag('lateBloomer') && L.age >= 30) g *= 1.4;
       if (L.injuries > 0) g *= 0.5;
       g *= L.xpMul ?? 1;
+      if (L.flags.busyLap) g *= 0.7; // 上一圈停得太多，没顾上修行
       if (L.stall) g = 0; // 道心蒙尘
       L.xp += g;
       if (this.capped()) L.xp = Math.min(L.xp, this.need());
     }
+    delete L.flags.busyLap;
     L.hp = Math.min(L.maxHp, L.hp + L.maxHp * (L.injuries > 0 ? 0.2 : 0.6));
     if (L.injuries > 0) L.injuries -= 1;
 
@@ -464,7 +456,7 @@ export class Game {
       return;
     }
 
-    await this.dealYear();
+    await boardLap(this);
     if (this.dead()) return;
     this.checkPages();
     this.checkWish();
@@ -675,7 +667,7 @@ export class Game {
   scheduleTurn(p: number) {
     const L = this.L;
     if (L.turnAt != null || (L.turned ?? 0) >= 2) return;
-    if (chance(p + L.attrs.luck * 0.015 + (L.merit >= 150 ? 0.05 : 0))) L.turnAt = L.age + this.step * randInt(3, 12);
+    if (chance(p + L.attrs.luck * 0.015 + (L.merit >= 150 ? 0.05 : 0) + (L.flags.baopu ? 0.15 : 0))) L.turnAt = L.age + this.step * randInt(3, 12);
   }
 
   async deadEnd() {
@@ -827,101 +819,11 @@ export class Game {
     if (id === 'art' && (L.skills.find((x) => x.id === 'art')?.lvl ?? 0) >= 5) this.gainPage(13);
   }
 
-  // ================= 流年签与去向卡 =================
+  // ================= 地点（命途棋盘的流年格） =================
   availableLocs(): LocationDef[] {
     const L = this.L;
     const stage = L.inDao ? 'cult' : 'mortal';
     return LOCATIONS.filter((l) => l.stage === stage && (!l.avail || l.avail(L, this.M)) && !L.bans[l.id] && (l.id !== 'demon' || this.M.unlocks.includes('demon')));
-  }
-
-  makeSign() {
-    const L = this.L;
-    const locs = this.availableLocs();
-    const danger = locs.filter((l) => l.danger);
-    const chanceLocs = locs.filter((l) => l.chance);
-    const gathered = L.inDao && L.calm >= 6;
-    const s = { calamity: [] as string[], chance: [] as string[], omen: [] as string[], gathered };
-    if (L.inDao) {
-      if (gathered) s.calamity = danger.map((d) => d.id);
-      else {
-        const n = chance(0.25 + (ERA_BY_ID[L.era ?? 'E1']?.calamityBoost ?? 0)) ? 2 : 1;
-        for (const d of shuffle(danger).slice(0, n)) s.calamity.push(d.id);
-      }
-    } else {
-      for (const l of locs.filter((x) => x.fatal)) if (chance(0.35)) s.omen.push(l.id);
-    }
-    if (!gathered) {
-      const n = L.attrs.luck >= 7 ? 2 : 1;
-      for (const c of shuffle(chanceLocs).slice(0, n)) s.chance.push(c.id);
-    }
-    this.sign = s;
-  }
-
-  signText(): string {
-    const nm = (ids: string[]) => ids.map((i) => LOC_BY_ID[i].name).join('、');
-    const s = this.sign;
-    if (s.gathered) return '流年：劫气积聚，诸地皆有劫';
-    const parts: string[] = [];
-    if (s.calamity.length) parts.push(`${nm(s.calamity)}有劫`);
-    if (s.omen.length) parts.push(`${nm(s.omen)}有凶`);
-    if (s.chance.length) parts.push(`${nm(s.chance)}有缘`);
-    if (!parts.length) return '流年：四方平静';
-    return '流年：' + parts.join('，');
-  }
-
-  tagOf(loc: string): CardTag {
-    const s = this.sign;
-    if (s.calamity.includes(loc)) return '劫';
-    if (s.omen.includes(loc)) return '凶';
-    if (s.chance.includes(loc)) return '缘';
-    return '平';
-  }
-
-  dealCards(first = true): Card[] {
-    const L = this.L;
-    const locs = this.availableLocs();
-    let n = L.attrs.luck < 3 ? 2 : 3;
-    n += L.talents.filter((t) => TALENT_BY_ID[t].flags?.includes('extraCard')).length;
-    n = Math.min(4, n);
-    const chosen: Card[] = [];
-    const used = new Set<string>();
-    const add = (loc: string) => {
-      if (used.has(loc) || chosen.length >= n) return;
-      used.add(loc);
-      chosen.push({ loc, tag: this.tagOf(loc) });
-    };
-    if (L.nextLoc && locs.some((l) => l.id === L.nextLoc)) {
-      add(L.nextLoc);
-      L.nextLoc = null;
-    }
-    for (const c of this.sign.calamity) if (chance(0.4) || this.sign.gathered) add(c);
-    for (const c of this.sign.chance) if (chance(0.8)) add(c);
-    for (const c of this.sign.omen) if (chance(0.5)) add(c);
-    // 霉运缠身：每年第一次重发必出劫或凶
-    if (!first && this.tflag('badLuck') && !L.flags.badLuckYear) {
-      L.flags.badLuckYear = 1;
-      const bad = locs.find((l) => (l.danger || l.fatal) && !used.has(l.id));
-      if (bad) {
-        used.add(bad.id);
-        chosen.push({ loc: bad.id, tag: L.inDao ? '劫' : '凶' });
-      }
-    }
-    const related = this.relatedLocs();
-    const rest = locs.filter((l) => !used.has(l.id));
-    while (chosen.length < n && rest.length) {
-      const l = weighted(rest, (x) => x.weight * (related.includes(x.id) ? 2 : 1) * this.locMult(x.id))!;
-      rest.splice(rest.indexOf(l), 1);
-      add(l.id);
-    }
-    // 至少一张平卡（劫气积聚年除外）
-    if (!this.sign.gathered && !chosen.some((c) => c.tag === '平' || c.tag === '缘')) {
-      const safe = locs.find((l) => !l.danger && !l.fatal && !used.has(l.id));
-      if (safe) chosen[chosen.length - 1] = { loc: safe.id, tag: '平' };
-    }
-    if (this.sign.gathered) for (const c of chosen) if (LOC_BY_ID[c.loc].danger) c.tag = '劫';
-    const out = shuffle(chosen);
-    this.injectFaceCard(out, first);
-    return out;
   }
 
   // 年代与本世加成对地点权重的倍率
@@ -930,34 +832,6 @@ export class Game {
     let m = ERA_BY_ID[L.era ?? 'E1']?.weight[loc] ?? 1;
     if (loc === 'fortune' && (L.flags.fortuneLife || L.flags.fortuneYear === L.age)) m *= 1.5;
     return m;
-  }
-
-  // 「引」「故」卡：替换一张非劫的去向卡，同回合最多一张
-  injectFaceCard(cards: Card[], first: boolean) {
-    const L = this.L;
-    const slot = () => {
-      let i = cards.findIndex((c) => c.tag === '平');
-      if (i < 0) i = cards.findIndex((c) => c.tag !== '劫');
-      return i < 0 ? cards.length - 1 : i;
-    };
-    const h = L.hook;
-    if (h && !h.outcome && h.beat < 3 && L.age >= h.due) {
-      const beat = HOOK_BY_ID[h.id].beats[h.beat];
-      cards[slot()] = { loc: beat.loc, tag: '引' };
-      this.hookOffered = true;
-      return;
-    }
-    if (!first) {
-      if (this.acqCard) cards[slot()] = this.acqCard;
-      return;
-    }
-    this.acqCard = null;
-    if ((L.acqCards ?? 0) >= 2 || !chance(0.04)) return;
-    const a = this.reunionCandidate();
-    if (!a) return;
-    const loc = L.inDao ? pick(['bazaar', 'cave', 'roam', 'cross'].filter((x) => this.availableLocs().some((l) => l.id === x))) ?? 'cave' : pick(['neighbor', 'market', 'home']);
-    this.acqCard = { loc, tag: '故', acq: a.id };
-    cards[slot()] = this.acqCard;
   }
 
   reunionCandidate(): Acquaintance | null {
@@ -994,55 +868,6 @@ export class Game {
       (L.flags.rerollPlus ?? 0) +
       this.fairBonus
     );
-  }
-
-  async dealYear() {
-    const L = this.L;
-    this.makeSign();
-    this.rerolls = this.rerollCount();
-    this.fairBonus = 0;
-    delete L.flags.badLuckYear;
-    let cards = this.dealCards(true);
-    this.log(this.signText(), 'fate');
-    for (;;) {
-      const view: DealView = {
-        sign: this.signText(),
-        rerolls: this.rerolls,
-        canRewind: this.hasPage(17) && !L.rewindUsed && !!this.prevSnapshot && !this.battleSinceSnap,
-        gathered: this.sign.gathered,
-        cards: cards.map((c) => ({ ...c, ...this.cardFace(c), peekText: c.peeked ? this.peekLabel(c) : undefined })),
-      };
-      const act = await this.io.deal(view);
-      if (act.action === 'reroll' && this.rerolls > 0) {
-        this.rerolls -= 1;
-        L.rerollsUsed += 1;
-        cards = this.dealCards(false);
-        continue;
-      }
-      if (act.action === 'peek' && this.rerolls > 0) {
-        this.rerolls -= 1;
-        L.rerollsUsed += 1;
-        const c = cards[act.idx];
-        c.peeked = this.pickEvent(c)?.id ?? 'nothing';
-        continue;
-      }
-      if (act.action === 'rewind' && view.canRewind) {
-        await this.rewind();
-        return;
-      }
-      if (act.action === 'go') {
-        const c = cards[act.idx];
-        const h = L.hook;
-        if (this.hookOffered && h && !h.outcome && c.tag !== '引') {
-          h.deferred += 1;
-          if (h.deferred > 5) await this.hookEnd('open', '顺延太久');
-        }
-        this.hookOffered = false;
-        this.acqCard = null;
-        await this.goTo(c);
-        return;
-      }
-    }
   }
 
   cardFace(c: Card): { name: string; icon: string; hint: string } {
@@ -1155,7 +980,8 @@ export class Game {
     return pick(ready);
   }
 
-  async goTo(c: Card) {
+  // 停在地点格：抽事件并结算，返回是否打过仗
+  async goTo(c: Card): Promise<boolean> {
     const L = this.L;
     const def = LOC_BY_ID[c.loc];
     if (c.loc === 'home') L.homeVisits += 1;
@@ -1179,8 +1005,7 @@ export class Game {
       const fought = { v: false };
       if (c.tag === '引') await this.hookBeat(c, fought);
       else await this.reunion(c, fought);
-      if (L.inDao) L.calm = fought.v ? 0 : L.calm + 1;
-      return;
+      return fought.v;
     }
     let picked: { id: string; ev?: LifeEvent; bond?: BondEvent } | null;
     if (c.peeked) picked = this.resolvePeeked(c);
@@ -1188,12 +1013,9 @@ export class Game {
 
     const fought = { v: false };
     await this.runPicked(c, picked, fought);
-    if (L.inDao) {
-      if (fought.v) L.calm = 0;
-      else L.calm += 1;
-    }
     // 「顺路」流水账
-    if (!this.dead() && chance(0.25)) this.log(pick(L.inDao ? ON_THE_WAY_CULT : ON_THE_WAY_MORTAL));
+    if (!this.dead() && chance(0.12)) this.log(pick(L.inDao ? ON_THE_WAY_CULT : ON_THE_WAY_MORTAL));
+    return fought.v;
   }
 
   resolvePeeked(c: Card) {
@@ -1319,6 +1141,14 @@ export class Game {
       L.hp = Math.min(L.hp, L.maxHp);
     }
     if (e.grudge) L.flags.grudge = 1;
+    // 命途棋盘：这一圈做过的事，下个岁首长成后果格
+    const cq = (L.conseqNext ??= []);
+    if (e.grudge) cq.push('grudge');
+    if (e.partner) cq.push('partner');
+    if (e.disciple && e.disciple > 0) cq.push('disciple');
+    if (e.injure && e.injure > 0) cq.push('injured');
+    if (e.skill && L.inDao) cq.push('treasure');
+    if (e.flag === 'saved' || (e.merit ?? 0) >= 15) cq.push('rescue');
     if (e.grudge) this.trace('grudge');
     if (e.removeGrudge) {
       delete L.flags.grudge;
@@ -1617,9 +1447,10 @@ export class Game {
 
   async market() {
     const L = this.L;
-    L.marketCd = 6;
+    L.marketCd = 2;
     for (;;) {
       const items = [
+        { label: `如意骰（灵石 30）：下一次掷骰任选点数`, cost: 30, fn: () => { L.dice && (L.dice.ruyi += 1); } },
         { label: `疗伤丹（灵石 20）：清空暗伤，回满气血`, cost: 20, fn: () => { L.injuries = 0; L.hp = L.maxHp; } },
         { label: `续命丹（灵石 60）：寿元 +10`, cost: 60, fn: () => { L.lifeBonus += 10; } },
         { label: `悟道玉简（灵石 50）：随机一件法宝升阶`, cost: 50, fn: () => this.upgradeRandomSkill('参悟玉简') },
@@ -1872,6 +1703,7 @@ export class Game {
       if (this.tflag('stealLife')) L.lifeBonus += 2;
       this.log(`${o.title}：胜。斩墨 ${res.kills}，灵石 +${Math.round(res.stones * spec.reward)}。`, 'battle');
       if (o.kind === 'duel') this.highlight(`${o.title}，力克强敌`, 30, 'elite');
+      if (o.kind === 'beast' && L.inDao && chance(0.3)) (L.conseqNext ??= []).push('slay');
       if (mainLine) this.ascend(res);
       return;
     }
@@ -1924,6 +1756,12 @@ export class Game {
       if (L.legend === 'L08') L.attrs.luck = Math.max(0, L.attrs.luck - 2);
       this.log('浴火凤命：本该死在这里，可你又睁开了眼。', 'fate');
       L.hp = 1;
+      return;
+    }
+    if (L.flags.sarira && cause !== '大限坐化' && cause !== '寿终正寝' && cause !== '坠入墨井' && cause !== '陨于天劫') {
+      delete L.flags.sarira;
+      this.log('胸口那点温热碎了。舍利替你挡下了这一回。', 'fate');
+      L.hp = Math.max(1, Math.round(L.maxHp * 0.3));
       return;
     }
     L.deathCause = cause;
@@ -2029,6 +1867,7 @@ export class Game {
     const L = this.L;
     const M = this.M;
     M.deaths += 1;
+    recordLegacies(this);
     M.recentChoices = [L.choicesDone.slice(), ...(M.recentChoices ?? [])].slice(0, 2);
     if (L.hook && !L.hook.outcome) await this.hookEnd('open', '到死没走完');
     this.checkWish(true);
