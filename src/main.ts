@@ -1,4 +1,5 @@
 import './style.css';
+import './art/art.css';
 import { Game, DealAction, DealView, IO, Prompt, skillName } from './game/engine';
 import { loadLife, loadMeta, resetAll, saveMeta, lampOf } from './game/meta';
 import { runBattle } from './battle/view';
@@ -6,6 +7,10 @@ import { ATTR_NAMES, AttrKey, CN_NUM, REALMS, ROOTS, SCHOOL_NAMES, School, TALEN
 import { COMPANION_NAMES, CompanionId, LEGENDS, MUTATORS, PAGES, VOLUME_NAMES, WISHES } from './data/content';
 import type { LifeState, LogEntry, Tendency } from './game/types';
 import { ERA_BY_ID, HOOKS, RELATION_NAMES, faceKinds } from './data/faces';
+import { LOC_BY_ID } from './data/events';
+import { Scene } from './art/scene';
+import { moment, momentsIdle, setMomentSpeed } from './art/moments';
+import { sfx, setSound, soundOn } from './art/sound';
 
 const $ = (id: string) => document.getElementById(id)!;
 const scrollEl = $('scroll');
@@ -16,6 +21,7 @@ const battleEl = $('battle');
 const metaEl = $('meta-info');
 const mstatusEl = $('mstatus');
 const panelMask = $('panel-mask');
+const scene = new Scene($('scene'));
 
 // 手机上角色面板是底部抽屉
 function togglePanel(open?: boolean) {
@@ -46,7 +52,9 @@ function closeModal() {
   modalEl.innerHTML = '';
 }
 
-function choose(p: Prompt): Promise<number> {
+async function choose(p: Prompt): Promise<number> {
+  await momentsIdle();
+  if (p.style === 'well' || p.style === 'epitaph') scene.set({ mode: 'well' });
   return new Promise((resolve) => {
     const box = openModal(
       `<h2>${esc(p.title)}</h2><div class="prompt-text">${nl(p.text)}</div><div class="opts"></div><div class="hint">数字键 1～${p.options.length} 快速选择</div>`,
@@ -71,6 +79,7 @@ function choose(p: Prompt): Promise<number> {
     window.addEventListener('keydown', onKey);
     function done(i: number) {
       window.removeEventListener('keydown', onKey);
+      sfx.pluck(i + 2, 0.35);
       closeModal();
       resolve(i);
     }
@@ -79,7 +88,9 @@ function choose(p: Prompt): Promise<number> {
   });
 }
 
-function pickTalents(cands: Talent[], heritage: string | null): Promise<string[]> {
+async function pickTalents(cands: Talent[], heritage: string | null): Promise<string[]> {
+  await momentsIdle();
+  scene.set({ mode: 'well' });
   return new Promise((resolve) => {
     const sel = new Set<string>();
     const box = openModal(`<h2>抽天赋 · ${cands.length} 选 3</h2><div class="talent-grid"></div><div class="row"><span class="picked">已选 0/3</span><button class="btn primary" disabled>确定</button></div>`, 'wide');
@@ -94,6 +105,7 @@ function pickTalents(cands: Talent[], heritage: string | null): Promise<string[]
         if (sel.has(t.id)) sel.delete(t.id);
         else if (sel.size < 3) sel.add(t.id);
         d.classList.toggle('on', sel.has(t.id));
+        sfx.pluck(sel.size + 1, 0.3);
         picked.textContent = `已选 ${sel.size}/3`;
         ok.disabled = sel.size !== 3;
       };
@@ -106,7 +118,8 @@ function pickTalents(cands: Talent[], heritage: string | null): Promise<string[]
   });
 }
 
-function allocate(points: number, base: Record<AttrKey, number>, origins: string[]): Promise<{ attrs: Record<AttrKey, number>; origin: string | null }> {
+async function allocate(points: number, base: Record<AttrKey, number>, origins: string[]): Promise<{ attrs: Record<AttrKey, number>; origin: string | null }> {
+  await momentsIdle();
   return new Promise((resolve) => {
     const add: Record<AttrKey, number> = { gen: 5, wu: 5, luck: 5, fam: 5 };
     let left = points - 20;
@@ -165,16 +178,19 @@ const AUTO_SCORE: Record<Tendency, Record<string, number>> = {
   war: { 平: 0, 缘: 1, 劫: 3, 凶: -2 },
 };
 
-function deal(v: DealView): Promise<DealAction> {
+async function deal(v: DealView): Promise<DealAction> {
+  await momentsIdle();
+  setMomentSpeed(auto ? meta.settings.speed * 1.6 : 1);
+  scene.set({ mode: 'life', danger: v.gathered ? 1 : v.cards.some((c) => c.tag === '劫') ? 0.5 : v.cards.some((c) => c.tag === '凶') ? 0.3 : 0 });
   return new Promise((resolve) => {
     let peekMode = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const render = () => {
       dealEl.innerHTML = `
-        <div class="sign">${esc(v.sign)}</div>
+        <div class="sign${v.gathered ? ' gathered' : ''}">${esc(v.sign)}</div>
         <div class="cards">${v.cards
           .map(
-            (c, i) => `<button class="card ${TAG_CLASS[c.tag]} ${peekMode ? 'peeking' : ''}" data-i="${i}">
+            (c, i) => `<button class="card ${TAG_CLASS[c.tag]} ${peekMode ? 'peeking' : ''}" data-i="${i}" style="--i:${i}">
               <span class="c-icon">${c.icon}</span><span class="c-name">${c.name}</span>
               <span class="c-tag">${c.tag}</span><span class="c-hint">${esc(c.peekText ?? c.hint)}</span><kbd>${i + 1}</kbd></button>`,
           )
@@ -189,6 +205,7 @@ function deal(v: DealView): Promise<DealAction> {
       dealEl.querySelectorAll<HTMLButtonElement>('[data-a]').forEach((b) => {
         b.onclick = () => {
           const a = b.dataset.a;
+          sfx.tap();
           if (a === 'reroll') finish({ action: 'reroll' });
           else if (a === 'peek') {
             peekMode = !peekMode;
@@ -206,7 +223,12 @@ function deal(v: DealView): Promise<DealAction> {
       if (peekMode) {
         if (v.cards[i].peekText) return;
         finish({ action: 'peek', idx: i });
-      } else finish({ action: 'go', idx: i });
+      } else {
+        const c = v.cards[i];
+        sfx.pluck([0, 2, 4, 5][i] ?? 3, 0.45);
+        scene.set({ loc: c.loc, locName: c.name, danger: c.tag === '劫' ? 0.55 : c.tag === '凶' ? 0.3 : 0 });
+        finish({ action: 'go', idx: i });
+      }
     };
     const onKey = (e: KeyboardEvent) => {
       if (modalEl.classList.contains('show') || battleEl.classList.contains('show')) return;
@@ -261,8 +283,37 @@ function flash(msg: string) {
 
 // ---------------- 卷轴与面板 ----------------
 let lastAge = -1;
+let replaying = false; // 续档、回溯时整段重放日志，不放演出
+let seen = { life: -1, root: '', inDao: false, realm: 0 };
+function watchState() {
+  const L = game?.L;
+  if (!L || replaying) return;
+  if (seen.life !== L.lifeNo) {
+    seen = { life: L.lifeNo, root: L.root, inDao: L.inDao, realm: L.realm };
+    return;
+  }
+  if (seen.root !== L.root && seen.root === 'unknown') {
+    const r = ROOTS.find((x) => x.id === L.root);
+    if (r) moment({ kind: 'root', big: r.name, sub: '测灵根', line: r.id === 'none' ? '测灵石一点光也没亮。' : '测灵石亮了。', seal: r.id === 'none' ? '凡' : '灵' });
+  }
+  if (!seen.inDao && L.inDao) moment({ kind: 'dao', big: '入道', sub: `${cnAge(L.age)}岁`, line: L.route === 'sect' ? '拜入宗门，从此踏上仙途。' : '随散修云游，从此踏上仙途。', seal: '仙' });
+  if (L.inDao && L.realm > seen.realm && seen.inDao) moment({ kind: 'realm', big: REALMS[L.realm].name, sub: '破境', line: `渡${REALMS[L.realm - 1].trial}，寿元大增。`, seal: '破' });
+  seen = { life: L.lifeNo, root: L.root, inDao: L.inDao, realm: L.realm };
+}
 function log(e: LogEntry) {
   if (!e.text) return;
+  watchState();
+  if (!replaying) {
+    if (e.kind === 'death') {
+      const L = game.L;
+      const big = e.text.startsWith('隐藏结局') ? e.text.replace('隐藏结局 · ', '') : L.ended === '叩门' ? '叩门' : L.deathCause ?? '卒';
+      moment({ kind: 'death', big, sub: `第 ${L.lifeNo} 世 · ${cnAge(L.age)}岁`, line: e.text, seal: L.ended === '叩门' ? '门' : '卒' });
+      scene.set({ mode: 'dead' });
+    } else if (e.kind === 'page') {
+      const n = e.text.match(/第 (\d+) 页/)?.[1];
+      moment({ kind: 'page', big: '天书', sub: n ? `第 ${n} 页` : '', line: e.text.replace(/^天书第 \d+ 页/, '').replace(/^：/, ''), dur: 1500 });
+    }
+  }
   if (e.age !== lastAge) {
     const h = document.createElement('div');
     h.className = 'age';
@@ -279,6 +330,7 @@ function log(e: LogEntry) {
 function clearLog() {
   scrollEl.innerHTML = '';
   lastAge = -1;
+  replaying = true;
 }
 
 function bar(cur: number, max: number, cls: string, label: string) {
@@ -300,6 +352,29 @@ function faceBlock(L: LifeState) {
 
 function refresh() {
   const L = game?.L;
+  if (L && replaying) {
+    replaying = false;
+    const born = seen.life !== L.lifeNo && L.age === 0;
+    seen = { life: L.lifeNo, root: L.root, inDao: L.inDao, realm: L.realm };
+    if (born) {
+      const era = L.era ? ERA_BY_ID[L.era] : null;
+      moment({ kind: 'birth', big: `第${cnAge(L.lifeNo)}世`, sub: era ? `画卷 · ${era.name}` : '入世', line: era?.open, seal: '生' });
+    }
+  } else watchState();
+  if (L) {
+    const lastLoc = [...L.log].reverse().find((x) => x.loc)?.loc;
+    const dead = !!(L.deathCause || L.ended);
+    scene.set({
+      lifeNo: L.lifeNo,
+      age: L.age,
+      realm: L.realm,
+      inDao: L.inDao,
+      era: L.era ?? 'E1',
+      hpLow: L.hp < L.maxHp * 0.3,
+      mode: dead ? (scene.st.mode === 'well' ? 'well' : 'dead') : 'life',
+      ...(scene.st.lifeNo !== L.lifeNo ? { loc: lastLoc ?? 'home', locName: locName(lastLoc ?? 'home', L.era) } : {}),
+    });
+  }
   metaEl.innerHTML = `第 ${meta.lives} 世${L?.era ? " · " + ERA_BY_ID[L.era].name : ""} · ${VOLUME_NAMES[meta.saga.volume]} · 天书 ${meta.saga.pages.length + (L ? L.pagesGot.filter((p) => !meta.saga.pages.includes(p)).length : 0)}/27 · 宿慧 ${meta.insight}`;
   if (!L) return;
   const realm = L.inDao ? REALMS[L.realm].name : '凡人';
@@ -345,7 +420,12 @@ function refresh() {
   if (close) close.onclick = () => togglePanel(false);
 }
 
+function locName(id: string, era?: string | null) {
+  return (era && ERA_BY_ID[era]?.rename?.[id]?.name) ?? LOC_BY_ID[id]?.name ?? '人间';
+}
+
 async function pace() {
+  await momentsIdle();
   if (!game) return;
   if (game.L.age <= 5) await sleep(auto ? 120 / meta.settings.speed : 260);
   else if (auto) await sleep(150 / meta.settings.speed);
@@ -409,11 +489,13 @@ function showPast() {
 function showSettings() {
   const box = openModal(`<h2>设置</h2>
     <div class="set-row"><b>自动倾向</b>${(['safe', 'chance', 'war'] as Tendency[]).map((t) => `<label><input type="radio" name="t" value="${t}" ${meta.settings.tendency === t ? 'checked' : ''}>${TEND_NAMES[t]}</label>`).join('')}</div>
+    <div class="set-row"><b>音效</b><label><input type="radio" name="snd" value="on" ${soundOn() ? 'checked' : ''}>开</label><label><input type="radio" name="snd" value="off" ${!soundOn() ? 'checked' : ''}>关</label></div>
     <div class="set-row"><b>自动速度</b>${[1, 2, 4].map((s) => `<label><input type="radio" name="s" value="${s}" ${meta.settings.speed === s ? 'checked' : ''}>${s}×</label>`).join('')}</div>
     <p class="muted">自动模式只替你选去向卡；抉择、出征准备、劫气积聚年和气血不足时会停下来等你。战斗：WASD / 方向键移动，触屏拖动；Q 收剑（不杀生），P 暂停。</p>
     <div class="row"><button class="btn danger" data-reset>清空存档</button><button class="btn primary" data-ok>好</button></div>`, 'mid');
   box.querySelectorAll<HTMLInputElement>('input[name=t]').forEach((r) => (r.onchange = () => { meta.settings.tendency = r.value as Tendency; saveMeta(meta); }));
   box.querySelectorAll<HTMLInputElement>('input[name=s]').forEach((r) => (r.onchange = () => { meta.settings.speed = Number(r.value); saveMeta(meta); }));
+  box.querySelectorAll<HTMLInputElement>('input[name=snd]').forEach((r) => (r.onchange = () => setSound(r.value === 'on')));
   (box.querySelector('[data-ok]') as HTMLButtonElement).onclick = closeModal;
   (box.querySelector('[data-reset]') as HTMLButtonElement).onclick = () => {
     if (confirm('确定清空全部轮回数据？')) {
@@ -436,7 +518,17 @@ document.querySelectorAll<HTMLButtonElement>('[data-open]').forEach((b) => {
 const io: IO = {
   choose,
   deal,
-  battle: (spec) => runBattle(spec, battleEl),
+  battle: async (spec) => {
+    await momentsIdle();
+    const KIND: Record<string, string> = { beast: '妖潮', duel: '斗法', trial: '天劫' };
+    moment({ kind: 'battle', big: spec.title, sub: KIND[spec.kind] ?? '劫难', line: spec.mutators.length ? `词条：${spec.mutators.map((m) => m.name).join('、')}` : '墨潮涌来。', seal: '劫' });
+    await momentsIdle();
+    scene.paused = true;
+    const res = await runBattle(spec, battleEl, game.L.era ?? 'E1');
+    scene.paused = false;
+    scene.start();
+    return res;
+  },
   pickTalents,
   allocate,
   log,

@@ -1,6 +1,8 @@
 // 劫难战斗画面：淡蓝水墨战场（Canvas2D），键盘 WASD / 方向键，触屏拖动
 import { BattleSim, ARENA } from './sim';
 import type { BattleSpec, BattleResult } from './spec';
+import { ERA_LOOK, mix, rgba } from '../art/palette';
+import { sfx } from '../art/sound';
 
 const INK = '#1d2a38';
 const BLUE_INK = '#3A6080';
@@ -13,10 +15,16 @@ function makePaper(ctx: CanvasRenderingContext2D) {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const g = c.getContext('2d')!;
-  g.fillStyle = '#eef3f5';
+  g.fillStyle = '#f1eadb';
   g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 30; i++) {
+    g.fillStyle = `rgba(160,130,80,${Math.random() * 0.018})`;
+    g.beginPath();
+    g.ellipse(Math.random() * 256, Math.random() * 256, 10 + Math.random() * 40, 6 + Math.random() * 20, Math.random() * 3, 0, Math.PI * 2);
+    g.fill();
+  }
   for (let i = 0; i < 900; i++) {
-    g.strokeStyle = `rgba(120,140,155,${Math.random() * 0.06})`;
+    g.strokeStyle = `rgba(110,90,60,${Math.random() * 0.07})`;
     g.lineWidth = Math.random() * 1.2;
     const x = Math.random() * 256;
     const y = Math.random() * 256;
@@ -31,32 +39,106 @@ function makePaper(ctx: CanvasRenderingContext2D) {
   return paperPattern;
 }
 
-// 远山：按境界换色调
-const REALM_TINT = ['#dfe9ef', '#dfe9ef', '#efe7df', '#e3e6ea', '#e6edf2', '#efe9da'];
+// 远山：青绿山水，年代定色，境界越高越浓
+const REALM_SAT = [0.4, 0.45, 0.6, 0.75, 0.9, 1];
+let look = ERA_LOOK.E1;
 
-function drawMountains(ctx: CanvasRenderingContext2D, w: number, h: number, camX: number, camY: number, realm: number) {
-  ctx.fillStyle = REALM_TINT[realm] ?? REALM_TINT[1];
-  ctx.globalAlpha = 0.55;
-  ctx.fillRect(0, 0, w, h);
-  ctx.globalAlpha = 1;
+function drawMountains(ctx: CanvasRenderingContext2D, w: number, h: number, camX: number, camY: number, realm: number, kind: string) {
+  const sat = REALM_SAT[realm] ?? 0.6;
+  const sky = ctx.createLinearGradient(0, 0, 0, h * 0.55);
+  sky.addColorStop(0, rgba(look.sky[0], 0.85));
+  sky.addColorStop(1, rgba(look.sky[1], 0));
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, w, h * 0.55);
   const layers = [
-    { par: 0.08, col: 'rgba(152,186,206,0.35)', amp: 90, base: 0.42 },
-    { par: 0.16, col: 'rgba(58,96,128,0.22)', amp: 120, base: 0.62 },
+    { par: 0.05, top: look.far, a: 0.8, amp: Math.min(140, h * 0.16), base: Math.min(0.36, 300 / h), f: 0.0035 },
+    { par: 0.1, top: mix(look.hills[0], '#9fb0aa', (1 - sat) * 0.7), a: 0.85, amp: Math.min(180, h * 0.2), base: Math.min(0.5, 420 / h), f: 0.0052 },
   ];
   for (const L of layers) {
-    ctx.fillStyle = L.col;
-    ctx.beginPath();
     const off = -camX * L.par;
     const by = h * L.base - camY * L.par * 0.3;
-    ctx.moveTo(0, h);
-    for (let x = 0; x <= w + 40; x += 40) {
+    const lg = ctx.createLinearGradient(0, by - L.amp, 0, by + 140);
+    lg.addColorStop(0, rgba(L.top, L.a));
+    lg.addColorStop(1, rgba(mix(look.hills[1], '#d9d2bd', 1 - sat), 0));
+    ctx.fillStyle = lg;
+    ctx.beginPath();
+    ctx.moveTo(0, by + 140);
+    const pts: [number, number][] = [];
+    for (let x = 0; x <= w + 30; x += 30) {
       const wx = x - off;
-      const y = by - Math.abs(Math.sin(wx * 0.004) * L.amp + Math.sin(wx * 0.011) * L.amp * 0.4);
+      const y = by - Math.pow(Math.abs(Math.sin(wx * L.f) * 0.75 + Math.sin(wx * L.f * 2.7 + 1) * 0.35), 1.4) * L.amp;
+      pts.push([x, y]);
       ctx.lineTo(x, y);
     }
-    ctx.lineTo(w, h);
+    ctx.lineTo(w + 30, by + 140);
     ctx.closePath();
     ctx.fill();
+    ctx.strokeStyle = 'rgba(30,34,39,0.22)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.stroke();
+  }
+  // 地面淡淡一层石绿
+  const gr = ctx.createLinearGradient(0, h * 0.45, 0, h);
+  gr.addColorStop(0, rgba(look.hills[1], 0));
+  gr.addColorStop(1, rgba(mix(look.hills[1], '#c9c1a3', 1 - sat), kind === 'trial' ? 0.12 : 0.22));
+  ctx.fillStyle = gr;
+  ctx.fillRect(0, h * 0.45, w, h * 0.55);
+}
+
+// 地上的草石：按格子取种子，跟着镜头走，给移动一个参照
+function drawGround(ctx: CanvasRenderingContext2D, camX: number, camY: number, vw: number, vh: number) {
+  const cell = 90;
+  const x0 = Math.floor((camX - vw) / cell);
+  const x1 = Math.ceil((camX + vw) / cell);
+  const y0 = Math.floor((camY - vh) / cell);
+  const y1 = Math.ceil((camY + vh) / cell);
+  for (let gx = x0; gx <= x1; gx++)
+    for (let gy = y0; gy <= y1; gy++) {
+      let hsh = Math.imul(gx * 73856093 ^ gy * 19349663, 2654435761) >>> 0;
+      const rnd = () => ((hsh = Math.imul(hsh ^ (hsh >>> 15), 2246822519) >>> 0) % 1000) / 1000;
+      if (rnd() > 0.45) continue;
+      const x = gx * cell + rnd() * cell;
+      const y = gy * cell + rnd() * cell;
+      const k = rnd();
+      ctx.strokeStyle = `rgba(30,34,39,${0.18 + rnd() * 0.15})`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      if (k < 0.7) {
+        for (let i = -1; i <= 1; i++) {
+          ctx.moveTo(x + i * 3, y);
+          ctx.quadraticCurveTo(x + i * 4, y - 6, x + i * 6, y - 9 - rnd() * 4);
+        }
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = rgba(look.hills[0], 0.18);
+        ctx.ellipse(x, y, 10 + rnd() * 8, 5 + rnd() * 3, 0, Math.PI, 0);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+}
+
+// 斩墨后留在纸上的墨渍，慢慢淡去
+interface Splat { x: number; y: number; r: number; t: number; seed: number }
+function drawSplats(ctx: CanvasRenderingContext2D, splats: Splat[]) {
+  for (const sp of splats) {
+    const a = Math.max(0, 1 - sp.t / 9) * 0.32;
+    if (a <= 0) continue;
+    ctx.fillStyle = `rgba(22,24,28,${a})`;
+    let hsh = sp.seed;
+    const rnd = () => ((hsh = Math.imul(hsh ^ (hsh >>> 13), 1274126177) >>> 0) % 1000) / 1000;
+    ctx.beginPath();
+    ctx.ellipse(sp.x, sp.y, sp.r, sp.r * 0.7, rnd() * 3, 0, Math.PI * 2);
+    ctx.fill();
+    for (let i = 0; i < 5; i++) {
+      const ang = rnd() * Math.PI * 2;
+      const d = sp.r * (1.1 + rnd() * 1.2);
+      ctx.beginPath();
+      ctx.arc(sp.x + Math.cos(ang) * d, sp.y + Math.sin(ang) * d * 0.7, 1.5 + rnd() * sp.r * 0.25, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }
 
@@ -132,9 +214,12 @@ function inkFigure(ctx: CanvasRenderingContext2D, x: number, y: number, r: numbe
 function drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, hurt: boolean) {
   ctx.save();
   ctx.translate(x, y);
-  ctx.fillStyle = 'rgba(58,167,201,0.18)';
+  const aura = ctx.createRadialGradient(0, 0, 4, 0, 0, 34);
+  aura.addColorStop(0, 'rgba(159,214,230,0.35)');
+  aura.addColorStop(1, 'rgba(159,214,230,0)');
+  ctx.fillStyle = aura;
   ctx.beginPath();
-  ctx.arc(0, 0, 30, 0, Math.PI * 2);
+  ctx.arc(0, 0, 34, 0, Math.PI * 2);
   ctx.fill();
   // 剑
   ctx.strokeStyle = '#7fb6c9';
@@ -188,9 +273,11 @@ function shotStroke(ctx: CanvasRenderingContext2D, x: number, y: number, vx: num
   ctx.stroke();
 }
 
-export function runBattle(spec: BattleSpec, root: HTMLElement): Promise<BattleResult> {
+export function runBattle(spec: BattleSpec, root: HTMLElement, era = 'E1'): Promise<BattleResult> {
+  look = ERA_LOOK[era] ?? ERA_LOOK.E1;
   return new Promise((resolve) => {
     const sim = new BattleSim(spec);
+    const fxState: FxState = { seen: new WeakSet(), splats: [], shake: 0, flash: 0, lastHp: sim.hp };
     root.innerHTML = '';
     root.classList.add('show');
     const canvas = document.createElement('canvas');
@@ -322,7 +409,8 @@ export function runBattle(spec: BattleSpec, root: HTMLElement): Promise<BattleRe
         lvShown = !!sim.levelUp;
         renderLevel();
       }
-      draw(ctx, sim, root.clientWidth, root.clientHeight, joy);
+      fxUpdate(fxState, sim, dt);
+      draw(ctx, sim, root.clientWidth, root.clientHeight, joy, fxState);
       drawHud(hud, sim, paused);
       if (sim.done) {
         endTimer += dt;
@@ -376,13 +464,40 @@ function drawHud(hud: HTMLElement, sim: BattleSim, paused: boolean) {
 const SK: Record<string, string> = { sword: '剑', orbit: '印', thunder: '雷', fire: '火', frost: '冰', ink: '幡', art: '法' };
 const skillShort = (id: string) => SK[id] ?? id;
 
-function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: number, joy: { ox: number; oy: number; x: number; y: number } | null) {
-  const camX = sim.px;
-  const camY = sim.py;
+interface FxState { seen: WeakSet<object>; splats: Splat[]; shake: number; flash: number; lastHp: number }
+
+// 读战斗里新出的特效，转成墨渍、震屏、闪白和音效
+function fxUpdate(st: FxState, sim: BattleSim, dt: number) {
+  for (const f of sim.fx) {
+    if (st.seen.has(f)) continue;
+    st.seen.add(f);
+    if (f.kind === 'kill') {
+      st.splats.push({ x: f.x, y: f.y, r: 8 + Math.random() * 8, t: 0, seed: (Math.random() * 1e9) | 0 });
+      sfx.kill();
+    } else if (f.kind === 'bolt') {
+      st.flash = Math.max(st.flash, 0.5);
+      st.shake = Math.max(st.shake, 0.25);
+      sfx.thunder();
+    } else if (f.kind === 'arc' || f.kind === 'slash') sfx.hit();
+  }
+  if (st.splats.length > 80) st.splats.splice(0, st.splats.length - 80);
+  for (const sp of st.splats) sp.t += dt;
+  if (sim.hp < st.lastHp - 0.5) {
+    st.shake = Math.max(st.shake, Math.min(0.35, (st.lastHp - sim.hp) / sim.maxHp * 3 + 0.12));
+    sfx.hurt();
+  }
+  st.lastHp = sim.hp;
+  st.shake = Math.max(0, st.shake - dt);
+  st.flash = Math.max(0, st.flash - dt * 2);
+}
+
+function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: number, joy: { ox: number; oy: number; x: number; y: number } | null, fx: FxState) {
+  const camX = sim.px + (fx.shake > 0 ? (Math.random() - 0.5) * fx.shake * 28 : 0);
+  const camY = sim.py + (fx.shake > 0 ? (Math.random() - 0.5) * fx.shake * 28 : 0);
   const zoom = Math.min(1, Math.max(0.62, Math.min(w, h) / 760));
-  ctx.fillStyle = makePaper(ctx) ?? '#eef3f5';
+  ctx.fillStyle = makePaper(ctx) ?? '#f1eadb';
   ctx.fillRect(0, 0, w, h);
-  drawMountains(ctx, w, h, camX, camY, sim.spec.realm);
+  drawMountains(ctx, w, h, camX, camY, sim.spec.realm, sim.spec.kind);
   if (sim.spec.kind === 'trial') {
     const g = ctx.createLinearGradient(0, 0, 0, h * 0.5);
     g.addColorStop(0, 'rgba(70,70,95,0.35)');
@@ -395,6 +510,8 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
   ctx.scale(zoom, zoom);
   ctx.translate(-camX, -camY);
   const t = sim.t;
+  drawGround(ctx, camX, camY, w / zoom / 2 + 90, h / zoom / 2 + 90);
+  drawSplats(ctx, fx.splats);
 
   // 场地结界（靠近才显示）
   const dEdge = sim.arena - Math.hypot(sim.px, sim.py);
@@ -472,6 +589,18 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
       ctx.fillStyle = 'rgba(80,40,90,0.7)';
       ctx.fillRect(e.x + 14, e.y - 40, 22, 30);
     } else inkFigure(ctx, e.x, e.y, e.r, e.t, { ...opts, color: e.type === 'chiyi' ? '#7a1f1f' : e.type === 'mage' ? '#2b3d5c' : e.type === 'hebo' ? '#2c5a6a' : INK });
+    if (e.hitFlash > 0) {
+      // 命中：一点青白星芒
+      ctx.strokeStyle = 'rgba(214,240,248,0.95)';
+      ctx.lineWidth = 2;
+      const s2 = e.r * 0.9;
+      ctx.beginPath();
+      ctx.moveTo(e.x - s2, e.y - e.r * 0.3);
+      ctx.lineTo(e.x + s2, e.y - e.r * 0.3);
+      ctx.moveTo(e.x, e.y - e.r * 0.3 - s2);
+      ctx.lineTo(e.x, e.y - e.r * 0.3 + s2);
+      ctx.stroke();
+    }
     if (e.state === 1) {
       ctx.strokeStyle = 'rgba(192,57,43,0.8)';
       ctx.lineWidth = 2;
@@ -569,11 +698,12 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
       ctx.lineWidth = 2;
       ctx.stroke();
     } else if (f.kind === 'kill') {
-      ctx.fillStyle = `rgba(29,42,56,${0.5 * a})`;
-      for (let i = 0; i < 6; i++) {
-        const ang = i * 1.05;
+      ctx.fillStyle = `rgba(22,24,28,${0.6 * a})`;
+      for (let i = 0; i < 8; i++) {
+        const ang = i * 0.79 + f.x;
+        const d = 34 * (1 - a) * (0.6 + (i % 3) * 0.25);
         ctx.beginPath();
-        ctx.arc(f.x + Math.cos(ang) * 30 * (1 - a), f.y + Math.sin(ang) * 30 * (1 - a), 3, 0, Math.PI * 2);
+        ctx.arc(f.x + Math.cos(ang) * d, f.y + Math.sin(ang) * d, 3.5 * a + 1, 0, Math.PI * 2);
         ctx.fill();
       }
     } else if (f.kind === 'text') {
@@ -599,6 +729,10 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
   }
   ctx.restore();
 
+  if (fx.flash > 0) {
+    ctx.fillStyle = `rgba(250,248,240,${fx.flash * 0.6})`;
+    ctx.fillRect(0, 0, w, h);
+  }
   // 河雾的视野暗角
   if (sim.mods.M03) {
     const g = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.max(w, h) * 0.7);
