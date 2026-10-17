@@ -1514,90 +1514,6 @@ button,
 }
 
 /* ---------- 修炼与法宝：行囊、功法 ---------- */
-.bag-root {
-  position: fixed;
-  inset: 0;
-  z-index: 70;
-  background: rgba(29, 42, 56, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-}
-.bag-box {
-  background: var(--paper-2);
-  border: 1px solid rgba(184, 146, 58, 0.5);
-  border-radius: 3px;
-  box-shadow: 0 20px 60px rgba(29, 42, 56, 0.3);
-  padding: 16px 20px;
-  width: min(640px, 100%);
-  max-height: 90vh;
-  overflow-y: auto;
-  font-family: var(--serif);
-}
-.bag-top {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.bag-top h2 {
-  margin: 0;
-  font-family: var(--brush, serif);
-  font-weight: 400;
-  color: var(--blue);
-}
-.bag-top span {
-  flex: 1;
-  color: var(--ink-2);
-  font-size: 13px;
-}
-.bag-box h3 {
-  font-size: 15px;
-  color: var(--blue);
-  margin: 14px 0 6px;
-}
-.bag-gong {
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.55);
-  border-radius: 3px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
-}
-.bg-head {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-  flex-wrap: wrap;
-}
-.bg-head span,
-.bg-qi {
-  font-size: 13px;
-  color: var(--ink-2);
-}
-.bg-qi,
-.bg-fj {
-  margin-top: 4px;
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-.bag-box select {
-  font: inherit;
-  font-size: 13px;
-  max-width: 100%;
-  padding: 2px 4px;
-}
-.fj {
-  border: 1px solid rgba(184, 146, 58, 0.6);
-  background: #fffaf0;
-  border-radius: 10px;
-  padding: 1px 8px;
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
 .bm {
   font-style: normal;
   font-size: 11px;
@@ -1609,24 +1525,6 @@ button,
 }
 .warn {
   color: var(--red, #b03030);
-}
-.bag-item {
-  display: grid;
-  grid-template-columns: auto auto 1fr;
-  gap: 6px;
-  align-items: baseline;
-  padding: 4px 0;
-  font-size: 14px;
-}
-.bag-item small {
-  color: var(--ink-2);
-}
-.bag-item.on b {
-  color: var(--teal);
-}
-.bag-line {
-  font-size: 13px;
-  margin: 4px 0;
 }
 .bag-open {
   margin: 4px 0 6px;
