@@ -115,7 +115,7 @@ export const CHOICES: LifeEvent[] = [
     { label: '不用', desc: '体弱维持', eff: {} },
   ] }),
   ev({ id: 'C-庙会-1', locs: ['fair'], kind: 'choice', text: '一个盲眼老妇人给你算命。', options: [
-    { label: '问前程', desc: '改命 +1', eff: { reroll: 1 } },
+    { label: '问前程', desc: '本世再摇 +1', eff: { again: 1, text: '她摸了摸你的手心：「你这一辈子，总还有一次重来的机会。」' } },
     { label: '问前世', eff: { text: '她摇摇头：「不必问，你会见到我的。」' } },
   ] }),
   ev({ id: 'C-仙踪-1', locs: ['trace'], kind: 'choice', text: '山里一把偶然落下的仙人佩剑。', options: [
@@ -219,6 +219,7 @@ export const FLAVORS: LifeEvent[] = [
   ev({ id: 'f-sick1', locs: ['sickbed'], kind: 'flavor', text: '风寒卧床一月，总算熬了过来。', repeat: true }),
   ev({ id: 'x-plague', locs: ['sickbed'], kind: 'fatal', text: '城里起了瘟疫。', fatal: { chance: 0.35, cause: '死于瘟疫' }, repeat: true }),
   ev({ id: 'f-fair1', locs: ['fair'], kind: 'flavor', text: '庙会上求了一支上上签。', eff: { reroll: 1 }, repeat: true }),
+  ev({ id: 'f-dice1', locs: ['market', 'neighbor'], kind: 'flavor', text: '货郎把一枚磨圆了角的旧骰子塞给你：「手气不好时，再摇一把。」（本世再摇 +1）', eff: { again: 1 } }),
   ev({ id: 'f-trace1', locs: ['trace'], kind: 'flavor', text: '你在山里看见一道剑光划过天边。', eff: { flag: 'extraCall' }, repeat: true }),
   // 修士
   ev({ id: 'f-cave1', locs: ['cave'], kind: 'flavor', text: '闭关一回合，修为精进。', eff: { xpPct: 3 }, repeat: true }),
@@ -266,6 +267,7 @@ export const ENCOUNTERS: LifeEvent[] = [
   ev({ id: 'q-canye', locs: ['fortune', 'realm'], kind: 'flavor', text: '古洞石匣里压着一页残缺的功法，恰好补上你那门功法缺的一角。', eff: { canye: true }, repeat: true, weight: 0.5 }),
   ev({ id: 'q-xinde', locs: ['quiet', 'cave'], kind: 'flavor', text: '静坐一夜，把这些年打过的仗在心里又过了一遍。', eff: { xinde: 2, xpPct: 2 }, repeat: true }),
   ev({ id: 'q-crow', locs: ['fortune'], kind: 'flavor', text: '一群墨鸦绕着你飞了三圈才散去。', eff: { trace: 'crow_omen' } }),
+  ev({ id: 'q-bonedie', locs: ['fortune', 'roam'], kind: 'flavor', text: '一位老散修临别送你一枚骨骰，说它记得每一次重来。（本世再摇 +2）', eff: { again: 2 } }),
   ev({ id: 'q-pill', locs: ['fortune', 'bazaar'], kind: 'flavor', text: '路遇丹师赠你一炉筑基丹的药渣，仍有余力。', eff: { xpPct: 6 }, repeat: true }),
   ev({ id: 'q-rift', locs: ['rift'], kind: 'flavor', text: '画外裂隙边，你看见一截断笔浮在空中，伸手却抓不住。', eff: { xpPct: 6, trace: 'rift' }, repeat: true }),
 ];
