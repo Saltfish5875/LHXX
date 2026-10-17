@@ -40,13 +40,14 @@ export interface RollView {
   stage: 'mortal' | 'cult';
   tiles: TileView[];
   pos: number;
-  dice: number[]; // 0 = 止，7 = 遁，-1 = 劫
-  targets: number[]; // 每颗骰落到的格；= size 表示越过岁首，本圈结束
+  dice: number[]; // 只有一颗；0 = 止，7 = 遁，-1 = 劫
+  targets: number[]; // 骰子落到的格；= size 表示越过岁首，本圈结束
   size: number; // 棋盘格数 12/16/20/24
   stageName: string;
   stops: number;
   maxStops: number;
-  rerolls: number;
+  rerolls: number; // 改命（每圈）：窥命用
+  again: number; // 再摇（每世）
   canRewind: boolean;
   ruyi: number;
   lap: number;
@@ -69,7 +70,16 @@ export function ensureBoard(g: Game) {
   L.ruinCleared ??= [];
   if (!L.dice) {
     const extra = L.talents.filter((t) => TALENT_BY_ID[t]?.flags?.includes('extraCard')).length;
-    L.dice = { n: Math.min(3, 1 + extra), stopFace: false, dunFace: false, ruyi: 0 };
+    L.dice = { n: 1, again: AGAIN_BASE + extra * 2, stopFace: false, dunFace: false, ruyi: 0 };
+  }
+  // 旧档：多出来的骰子折成再摇次数
+  if (L.dice.again === undefined) {
+    L.dice.again = AGAIN_BASE + (L.dice.n - 1) * 2;
+    L.dice.n = 1;
+  }
+  if (L.flags.againPending) {
+    L.dice.again += L.flags.againPending;
+    delete L.flags.againPending;
   }
   if (L.board) return;
   L.board = { tiles: makeTiles(BOARD_STAGES[boardStageOf(L)].size), pos: 0, lap: 0, stops: 0, visited: [], seenLoc: {}, gathered: false, stage: stageOf(L) };
@@ -130,9 +140,9 @@ function flipStage(g: Game) {
   const B = L.board!;
   B.stage = stageOf(L);
   if (!L.inDao) return;
-  if (L.route === 'sect' && L.dice!.n < 2) {
-    L.dice!.n = 2;
-    g.log('入了宗门，师父给了你第二颗骰子：每圈掷两颗，挑一颗走。', 'fate');
+  if (L.route === 'sect' && !L.flags.sectAgain) {
+    L.flags.sectAgain = 1;
+    gainAgain(g, 2, '入了宗门，师父教你一句口诀：落子之前，还可以再问一次天。');
   }
   for (const h of L.holdings!) {
     if (h.type === 'wu' && h.lv >= 5) {
@@ -235,7 +245,7 @@ function refreshTiles(g: Game, full: boolean) {
 function markTags(g: Game) {
   const L = g.L;
   const B = L.board!;
-  B.gathered = L.inDao && L.calm >= 6;
+  B.gathered = L.inDao && L.calm >= 8;
   const era = ERA_BY_ID[L.era ?? 'E1'];
   // 棋盘再大，平常年份的劫格也就两三处
   const maxJie = B.tiles.length >= 20 ? 3 : 2;
@@ -337,15 +347,20 @@ function harvest(g: Game) {
 function rollDice(g: Game): number[] {
   const L = g.L;
   const D = L.dice!;
-  const out: number[] = [];
-  for (let i = 0; i < D.n; i++) {
-    let v = randInt(1, 6);
-    if (i === 0 && v === 1 && D.stopFace) v = STOP;
-    else if (i === 0 && v === 1 && L.board!.gathered) v = JIE;
-    if (i === D.n - 1 && v === 6 && D.dunFace) v = DUN;
-    out.push(v);
-  }
-  return out;
+  let v = randInt(1, 6);
+  if (v === 1 && D.stopFace) v = STOP;
+  else if (v === 1 && L.board!.gathered) v = JIE;
+  if (v === 6 && D.dunFace) v = DUN;
+  return [v];
+}
+
+// 再摇次数：开局 1 次，事件、天机格、宗门可得，死了就没了
+export const AGAIN_BASE = 1;
+export function gainAgain(g: Game, n: number, text?: string) {
+  const D = g.L.dice;
+  if (!D) return;
+  D.again = (D.again ?? 0) + n;
+  g.log(`${text ? text + '（' : ''}再摇 +${n}${text ? '）' : ''}`, 'fate');
 }
 
 interface Dest {
@@ -391,6 +406,7 @@ function view(g: Game, dice: number[]): RollView {
     size: B.tiles.length,
     stageName: BOARD_STAGES.find((x) => x.size === B.tiles.length)?.name ?? '',
     rerolls: g.rerolls,
+    again: L.dice!.again ?? 0,
     canRewind: canRewind(g),
     ruyi: L.dice!.ruyi,
     lap: B.lap,
@@ -426,11 +442,11 @@ export async function boardLap(g: Game) {
       await g.rewind();
       return;
     }
-    if (act.action === 'reroll' && g.rerolls > 0) {
-      g.rerolls -= 1;
+    if (act.action === 'reroll' && (L.dice!.again ?? 0) > 0) {
+      L.dice!.again! -= 1;
       L.rerollsUsed += 1;
       dice = rollDice(g);
-      // 霉运缠身：每圈第一次改命，必有一颗骰指向劫或凶
+      // 霉运缠身：每圈第一次再摇，骰子必指向劫或凶
       if (badLuck) {
         badLuck = false;
         for (let s = B.pos + 1; s <= Math.min(B.tiles.length - 1, B.pos + 6); s++) {
@@ -486,7 +502,14 @@ export async function boardLap(g: Game) {
     B.pos = to;
     B.stops += 1;
     B.visited.push(to);
-    fought = (await land(g, B.tiles[to])) || fought;
+    const hit = await land(g, B.tiles[to]);
+    fought = hit || fought;
+    // 积聚的劫气一战即散：前面的劫格回到平常
+    if (hit && B.gathered && g.L === L) {
+      B.gathered = false;
+      for (const t of B.tiles) if (t.slot > B.pos && t.kind === 'loc' && t.tag === '劫') t.tag = '平';
+      g.log('一战过后，积聚的劫气散了。', 'fate');
+    }
     if (g.L !== L) {
       // 掌天瓶回溯过：状态已经换了
       L = g.L;
@@ -681,9 +704,9 @@ async function landOracle(g: Game) {
   const unit = L.inDao ? '灵石' : '银两';
   const items: { label: string; disabled?: boolean; fn: () => void; auto: number }[] = [];
   items.push({ label: '求签｜改命 +1', fn: () => { g.rerolls += 1; g.log(pick(ORACLE_SIGNS), 'fate'); }, auto: 1 });
-  const c2 = L.inDao ? 60 : 30;
-  if (D.n === 1) items.push({ label: `添一颗骰｜${unit} ${c2}：每圈掷两颗，挑一颗走`, disabled: L.stones < c2, fn: () => { L.stones -= c2; D.n = 2; g.log('你得了第二颗骰子。', 'fate'); }, auto: 5 });
-  if (D.n === 2) items.push({ label: `第三颗骰｜灵石 200，金丹起`, disabled: L.realm < 3 || L.stones < 200, fn: () => { L.stones -= 200; D.n = 3; g.log('你得了第三颗骰子。', 'fate'); }, auto: 4 });
+  // 骰签越请越贵：本世每请一支，价钱加一倍
+  const c2 = (L.inDao ? 60 : 30) * (1 + (L.flags.againBought ?? 0));
+  items.push({ label: `请一支骰签｜${unit} ${c2}：本世再摇 +2`, disabled: L.stones < c2, fn: () => { L.stones -= c2; L.flags.againBought = (L.flags.againBought ?? 0) + 1; gainAgain(g, 2, '签上只有一个字：再。'); }, auto: (D.again ?? 0) < 2 ? 5 : 2 });
   if (L.inDao && !D.stopFace) items.push({ label: '刻骰面｜灵石 80：一点刻成「止」，六点刻成「遁」', disabled: L.stones < 80, fn: () => { L.stones -= 80; D.stopFace = true; D.dunFace = true; g.log('骰子上多了两个字：止、遁。', 'fate'); }, auto: 3 });
   const lg = g.M.legacies ?? [];
   const cf = L.inDao ? 40 : 20;
@@ -694,7 +717,7 @@ async function landOracle(g: Game) {
   });
   const i = await g.choose({
     title: L.inDao ? '天机格' : '庙会',
-    text: L.inDao ? `天机阁的老人在摇签筒。你有灵石 ${L.stones}。` : `庙会上有人摆摊算命，也卖骰子。你有银两 ${L.stones}。`,
+    text: L.inDao ? `天机阁的老人在摇签筒。你有灵石 ${L.stones}，本世还能再摇 ${D.again ?? 0} 次。` : `庙会上有人摆摊算命，也卖骰签。你有银两 ${L.stones}，本世还能再摇 ${D.again ?? 0} 次。`,
     options: [...items.map((it) => { const [label, desc] = it.label.split('｜'); return { label, desc, disabled: it.disabled }; }), { label: '离开' }],
     key: 'oracle',
     autoPick: best,
@@ -1124,7 +1147,7 @@ export function tileScore(v: RollView, slot: number, tend: Tendency, L: LifeStat
     case 'start': return low ? 2.5 : 1;
     case 'fate': return t.hint.startsWith('蒙尘') ? 0 : 2;
     case 'market': return 0.8;
-    case 'oracle': return L.dice && L.dice.n < 2 ? 2 : 1;
+    case 'oracle': return L.dice && (L.dice.again ?? 0) < 2 ? 1.8 : 1;
     case 'hold': return t.tag === '劫' ? (tend === 'war' ? 1 : -1) : t.lv === 5 ? 0.4 : t.lv ? 1.2 : L.stones >= 40 ? 1.4 : 0.3;
     case 'conseq': return 1;
     case 'stray': return -0.5;
@@ -1150,4 +1173,10 @@ export function autoDie(v: RollView, tend: Tendency, L: LifeState, rnd: () => nu
     }
   });
   return best;
+}
+// 自动模式要不要再摇：落点太差、还有次数时摇
+export function autoAgain(v: RollView, tend: Tendency, L: LifeState): boolean {
+  if (v.again <= 0) return false;
+  const s = tileScore(v, v.targets[0], tend, L);
+  return s < 0 || (v.again >= 3 && s < 0.5);
 }

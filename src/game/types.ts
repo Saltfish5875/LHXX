@@ -57,6 +57,7 @@ export interface Effect {
   nextLoc?: string;
   banLoc?: { loc: string; years: number };
   reroll?: number;
+  again?: number; // 再摇次数 +n（本世）
   skill?: SkillId;
   fujue?: string | boolean; // 得一枚附诀（true = 随机）
   item?: string; // 得一件被动 / 主动法宝
@@ -287,9 +288,10 @@ export interface BoardState {
   stage?: 'mortal' | 'cult';
 }
 export interface DiceState {
-  n: number; // 1～3
-  stopFace: boolean; // 「止」面：第一颗骰的 1 换成 0
-  dunFace: boolean; // 「遁」面：最后一颗骰的 6 换成遁
+  n: number; // 恒为 1（旧档的 2～3 颗在读档时折成再摇次数）
+  again?: number; // 再摇次数：本世剩余，事件与天机格可得，每世重置
+  stopFace: boolean; // 「止」面：骰子的 1 换成 0
+  dunFace: boolean; // 「遁」面：骰子的 6 换成遁
   ruyi: number; // 如意骰：下一次任选点数
 }
 export interface Holding {

@@ -1219,6 +1219,10 @@ export class Game {
     if (e.nextLoc) L.nextLoc = e.nextLoc;
     if (e.banLoc) L.bans[e.banLoc.loc] = e.banLoc.years;
     if (e.reroll) this.fairBonus += e.reroll;
+    if (e.again) {
+      if (L.dice) L.dice.again = (L.dice.again ?? 0) + e.again;
+      else L.flags.againPending = (L.flags.againPending ?? 0) + e.again;
+    }
     if (e.skill && L.inDao) this.addSkill(e.skill);
     else if (e.skill) L.flags['pendStart_' + e.skill] = 0;
     if (e.fujue && L.inDao) grantFujue(this, typeof e.fujue === 'string' ? e.fujue : undefined);

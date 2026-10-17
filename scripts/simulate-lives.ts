@@ -1,7 +1,7 @@
 // 无界面跑完整人生：用真实的人生引擎与战斗逻辑（自动驾驶）批量模拟，输出 R12 验证指标
 // 用法：npm run sim -- [世数=40] [倾向=safe|chance|war|all] [种子=1]
 import { Game, IO, Prompt } from '../src/game/engine';
-import { RollAction, RollView, autoDie } from '../src/game/board';
+import { RollAction, RollView, autoAgain, autoDie } from '../src/game/board';
 import { newMeta } from '../src/game/meta';
 import { autoBattle } from '../src/battle/sim';
 import { setSeed, rand } from '../src/game/rng';
@@ -23,6 +23,8 @@ const TEND = (args[1] ?? 'all') as Tendency | 'all';
 const SEED = Number(args[2] ?? 1);
 
 interface Stats {
+  agains?: number;
+  againLeft?: number;
   decisions: number;
   rounds: number;
   nothing: number;
@@ -113,10 +115,14 @@ async function run(tend: Tendency): Promise<Stats> {
       if (v.stops === 0) st.laps += 1;
       st.rounds += 1;
       const L = g.L;
-      if (new Set(v.targets).size > 1) st.decisions += 1;
+      if (v.again > 0) st.decisions += 1;
       const tiles = v.tiles.filter((t) => t.kind === 'loc');
       st.cardsTotal += tiles.length;
       st.cardsFace += tiles.filter((t) => t.tag === '引' || t.tag === '故').length;
+      if (autoAgain(v, tend, L)) {
+        st.agains = (st.agains ?? 0) + 1;
+        return { action: 'reroll' };
+      }
       const die = autoDie(v, tend, L, rand);
       const to = v.targets[die];
       if (to < v.size && to !== v.pos) {
@@ -197,7 +203,7 @@ async function run(tend: Tendency): Promise<Stats> {
       st.cult.xinde += L.xinde ?? 0;
     }
     st.holdMax[Math.max(0, ...(L.holdings ?? []).map((h) => h.lv))] += 1;
-    st.dice[L.dice?.n ?? 0] += 1;
+    st.againLeft = (st.againLeft ?? 0) + (L.dice?.again ?? 0);
     st.fates[L.fate ?? '?'] = (st.fates[L.fate ?? '?'] ?? 0) + 1;
     if (L.capReason === 'daoji' || (L.daoji && L.fate && FATE_BY_ID[L.fate].paths.length && !FATE_BY_ID[L.fate].paths.includes(L.daoji))) st.mismatch += 1;
     if (L.flags.blockedAt) {
@@ -256,7 +262,7 @@ function report(tend: Tendency, st: Stats, meta: ReturnType<typeof newMeta>) {
   console.log(`年代分布 ${JSON.stringify(st.eras)}；与上一世同年代 ${st.eraRepeat} 次（目标 0）；千面录 ${new Set((meta.faces ?? []).map((f) => f.hook)).size} 种引子，故人在册 ${(meta.acquaintances ?? []).length}`);
   const ks = Object.entries(st.kinds).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${((v / Math.max(1, st.stops)) * 100).toFixed(0)}%`).join('，');
   console.log(`棋盘：每世 ${(st.laps / Math.max(1, n)).toFixed(1)} 圈（目标 50～70），每圈停 ${(st.stops / Math.max(1, st.laps)).toFixed(2)} 格；停格分布 ${ks}`);
-  console.log(`产业：置过产业的世 ${st.holdLives}；最高等级分布 0..5 = ${st.holdMax.join('/')}；遗迹进入 ${st.ruinVisits} 次，遗泽在册 ${(meta.legacies ?? []).length}；终局骰数 1/2/3 = ${st.dice.slice(1).join('/')}`);
+  console.log(`产业：置过产业的世 ${st.holdLives}；最高等级分布 0..5 = ${st.holdMax.join('/')}；遗迹进入 ${st.ruinVisits} 次，遗泽在册 ${(meta.legacies ?? []).length}；每世再摇用掉 ${((st.agains ?? 0) / Math.max(1, n)).toFixed(1)} 次、死时剩 ${((st.againLeft ?? 0) / Math.max(1, n)).toFixed(1)} 次`);
   console.log(`遭遇战来源：${Object.entries(st.btitles).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, v]) => `${k} ${v}`).join('，')}`);
   const c = st.cult;
   const d = Math.max(1, c.dao);

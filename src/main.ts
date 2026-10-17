@@ -1,7 +1,7 @@
 import './style.css';
 import './art/art.css';
 import { Game, IO, Prompt, skillName } from './game/engine';
-import { RollAction, RollView, autoDie, faceName, tileSceneLoc } from './game/board';
+import { RollAction, RollView, autoAgain, autoDie, faceName, tileSceneLoc } from './game/board';
 import { HOLDINGS } from './data/board';
 import { loadLife, loadMeta, resetAll, saveMeta, lampOf } from './game/meta';
 import { runBattle } from './battle/view';
@@ -264,9 +264,11 @@ async function roll(v: RollView): Promise<RollAction> {
     const diceHtml = () => {
       if (ruyiMode) return ruyiTargets.map((s, i) => `<button class="die-btn ruyi" data-r="${i + 1}"><span class="die">${dieFace(i + 1)}</span><small>${esc(targetName(s))}</small></button>`).join('');
       if (!rolled) return `<button class="roll-btn" data-a="roll">${v.dice.map((_, i) => `<span class="die blank" style="--i:${i}">${dieFace(randFace())}</span>`).join('')}<b>掷 骰</b></button>`;
-      return v.dice
-        .map((d, i) => `<button class="die-btn${d === 0 ? ' f-stop' : d === 7 ? ' f-dun' : d === -1 ? ' f-jie' : ''}" data-d="${i}" style="--i:${i}"><span class="die">${dieFace(d)}</span><small>${esc(targetName(v.targets[i]))}</small></button>`)
-        .join('');
+      const d = v.dice[0];
+      const t = v.targets[0];
+      const goText = t >= n ? '→ 过岁首' : t === v.pos ? '原地' : `→ ${targetName(t)}`;
+      return `<button class="die-btn${d === 0 ? ' f-stop' : d === 7 ? ' f-dun' : d === -1 ? ' f-jie' : ''}" data-d="0"><span class="die">${dieFace(d)}</span><small>${esc(goText)}</small></button>
+        <button class="again-btn" data-a="reroll" ${v.again <= 0 ? 'disabled' : ''}>${v.again > 0 ? `再摇一次<small>本世还剩 ${v.again} 次</small>` : '再摇用尽<small>事件可得</small>'}</button>`;
     };
     const render = () => {
       const targets = ruyiMode ? ruyiTargets : rolled ? v.targets : [];
@@ -312,8 +314,7 @@ async function roll(v: RollView): Promise<RollAction> {
           </div>
         </div>
         <div class="deal-actions">
-          <button class="btn" data-a="reroll" ${v.rerolls <= 0 || !rolled ? 'disabled' : ''}>改命·重掷（${v.rerolls}）</button>
-          <button class="btn ${peekMode ? 'active' : ''}" data-a="peek" ${v.rerolls <= 0 ? 'disabled' : ''}>改命·窥命</button>
+          <button class="btn ${peekMode ? 'active' : ''}" data-a="peek" ${v.rerolls <= 0 ? 'disabled' : ''}>改命·窥命（${v.rerolls}）</button>
           ${v.ruyi > 0 ? `<button class="btn ${ruyiMode ? 'active' : ''}" data-a="ruyi">如意骰（${v.ruyi}）</button>` : ''}
           ${v.canRewind ? '<button class="btn" data-a="rewind">掌天瓶·回溯</button>' : ''}
           <label class="btn chk"><input type="checkbox" data-a="autoroll" ${meta.settings.autoRoll ? 'checked' : ''}>自动摇</label>
@@ -428,6 +429,10 @@ async function roll(v: RollView): Promise<RollAction> {
         void tumble();
         return;
       }
+      if ((e.key === 'r' || e.key === 'R') && rolled && v.again > 0 && !going) {
+        finish({ action: 'reroll' });
+        return;
+      }
       const d = Number(e.key) - 1;
       if (ruyiMode && d >= 0 && d < 6) go(-1, d + 1);
       else if (d >= 0 && d < v.dice.length) go(d);
@@ -453,7 +458,9 @@ async function roll(v: RollView): Promise<RollAction> {
         return;
       }
       timer = setTimeout(() => {
-        if (!going) void go(autoDie(v, meta.settings.tendency, L, Math.random));
+        if (going) return;
+        if (autoAgain(v, meta.settings.tendency, L)) finish({ action: 'reroll' });
+        else void go(autoDie(v, meta.settings.tendency, L, Math.random));
       }, 380 / meta.settings.speed);
     }
     render();
