@@ -125,6 +125,34 @@ export interface Gain {
   ward?: boolean; // 护命：本世第一次因事件致死时活下来
   meta?: 'clan' | 'shrine' | 'nemesis' | 'signin'; // 跨世：家族 / 神位 / 宿敌 / 签到碑
 }
+// ================= 经历图谱 =================
+export type TrailKind = 'birth' | 'choice' | 'flavor' | 'chain' | 'hook' | 'acq' | 'bond' | 'battle' | 'realm' | 'echo' | 'wish' | 'ruin' | 'death';
+export interface TrailLink {
+  from: number;
+  why: '承' | '因' | '引发' | '余波' | '旧事';
+}
+export interface TrailNode {
+  id: number;
+  age: number;
+  kind: TrailKind;
+  title: string;
+  loc?: string;
+  text?: string; // 事件原文（截短）
+  pick?: string; // 你选了什么
+  lines: string[]; // 之后发生了什么
+  chips: string[]; // 得失
+  thread?: string;
+  threadName?: string;
+  beat?: string;
+  links: TrailLink[]; // 指向更早的节点
+}
+export interface TrailState {
+  nodes: TrailNode[];
+  flagSrc: Record<string, number>; // 世内标记 → 留下它的节点
+  cqSrc: Record<string, number>; // 后果格标签 → 留下它的节点
+  last: Record<string, number>; // 线索 → 最近一拍
+}
+
 export interface ChainState {
   id: string;
   beat: number; // 已走完的拍数 1～3（4 = 结束）
@@ -299,7 +327,8 @@ export interface LifeState {
   pet?: { kind: PetKind; lv: number; adult: boolean; name: string } | null;
   gains?: Gain[];
   partnerName?: string;
-  echoes?: { text: string; eff?: Effect; due: number }[];
+  echoes?: { text: string; eff?: Effect; due: number; src?: number }[];
+  trail?: TrailState; // 经历图谱
   nudgeLap?: number; // 龙驹：这一圈已拨过点数
 }
 
@@ -402,6 +431,7 @@ export interface MetaState {
   wheel: Record<string, number>;
   heritage: string | null;
   epitaphs: Epitaph[];
+  lastTrail?: { life: number; era?: string; nodes: TrailNode[] }; // 上一世的经历图谱
   discoveries: string[];
   hebo: number;
   siluIdx: number;

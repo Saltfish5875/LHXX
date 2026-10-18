@@ -13,6 +13,7 @@ import { ENC_MORTAL } from '../data/encounters-mortal';
 import { ENC_CULT_A } from '../data/encounters-cult-a';
 import { ENC_CULT_B } from '../data/encounters-cult-b';
 import { chance, pick, randInt } from './rng';
+import { trailChip, trailClose, trailHint, trailMark, trailOpen, trailThread, trailTop } from './trail';
 
 export const CHAINS: ChainDef[] = [...CHAINS_A, ...CHAINS_B, ...CHAINS_C];
 export const CHAIN_BY_ID: Record<string, ChainDef> = Object.fromEntries(CHAINS.map((c) => [c.id, c]));
@@ -74,6 +75,8 @@ export async function chainOp(g: Game, op: ChainOp) {
     const st: ChainState = { id, beat: op.op === 'skip' ? 2 : 1, yuan: op.op === 'skip' ? 1 : 0, marks: {}, due: lapNo(g) + gap(), misses: 0 };
     (L.chains ??= []).push(st);
     g.log(`缘起：「${CHAIN_BY_ID[id].name}」。`, 'fate');
+    if (op.op === 'start') trailThread(g, id, `「${CHAIN_BY_ID[id].name}」`);
+    else trailMark(g, { kind: 'chain', title: `缘起 · ${CHAIN_BY_ID[id].name}`, thread: id, threadName: `「${CHAIN_BY_ID[id].name}」`, beat: '承' });
   }
   const st = chainOf(L, id);
   if (!st || st.end) return;
@@ -101,6 +104,7 @@ export function breakChain(g: Game, st: ChainState, why: string) {
   st.onBoard = false;
   const d = CHAIN_BY_ID[st.id];
   g.log(`「${d.name}」断了（${why}）。`, 'fate');
+  trailMark(g, { kind: 'chain', title: `「${d.name}」断了`, text: why, thread: st.id, threadName: `「${d.name}」`, beat: '断' });
   // 断链留个余波：有过几分缘的，留一位「诺」故人
   if (st.yuan >= 2 && chance(0.5)) (L.acqNew ??= []).push({ role: d.name, relation: 'vow', src: 'chain' });
 }
@@ -137,6 +141,19 @@ export async function chainBeat(g: Game, id: string, loc: string, fought: { v: b
   if (!ok.length) ok = opts.filter((o) => !o.need);
   if (!ok.length) ok = [{ label: '随缘' }];
   const title = `缘 · ${d.name}（${BEAT_LABELS[n]}）`;
+  const needs = [...beat.options.map((o) => o.need), ...(beat.textIf ?? []).map((x) => x.need), ...(n >= 3 ? (d.end.endings ?? []).map((e) => e.need) : [])];
+  const flags = needs.flatMap((x) => (x?.flag ? [x.flag] : []));
+  const tid = trailOpen(g, { kind: 'chain', title: `缘 · ${d.name}`, loc, text, thread: id, threadName: `「${d.name}」`, beat: BEAT_LABELS[n], flags });
+  try {
+    await beatBody(g, st, d, n, beat, ok, title, text, loc, fought, ending);
+  } finally {
+    trailClose(g, tid);
+  }
+}
+
+async function beatBody(g: Game, st: ChainState, d: ChainDef, n: number, beat: ChainBeat, ok: ChainOption[], title: string, text: string, loc: string, fought: { v: boolean }, ending: ChainEnding | undefined) {
+  const L = g.L;
+  const id = st.id;
   const i = await g.ask(title, text, ok.map((o) => (o.desc ? `${o.label}｜${o.desc}` : o.label)), 'event', true, 'chain');
   const o = ok[i];
   g.log(`【${d.name}·${BEAT_LABELS[n]}】${text.replace(/\n+/g, '')}你选择了「${o.label}」。`, 'fate', { loc });
@@ -160,6 +177,7 @@ function finishChain(g: Game, st: ChainState, tier: NonNullable<ChainState['end'
   st.end = tier;
   const name = { top: '上档', mid: '中档', low: '下档', broken: '' }[tier];
   g.log(`「${d.name}」了结（${name}）。`, 'fate');
+  trailChip(g, `了结·${name}`);
   g.highlight(`了结「${d.name}」`, tier === 'top' ? 60 : tier === 'mid' ? 35 : 15, 'chain');
   if (tier === 'top' && !(M.chainsDone ??= []).includes(st.id)) {
     M.chainsDone.push(st.id);
@@ -310,8 +328,14 @@ export async function chainLapStart(g: Game) {
     L.echoes = (L.echoes ?? []).filter((e) => e.due > lap);
     const fought = { v: false };
     for (const e of due) {
-      g.log(`余波：${e.text}`, 'fate');
-      if (e.eff) await g.apply(e.eff, L.inDao ? 'cross' : 'home', fought);
+      trailHint(g, e.src, '余波');
+      const tid = trailOpen(g, { kind: 'echo', title: '余波', text: e.text });
+      try {
+        g.log(`余波：${e.text}`, 'fate');
+        if (e.eff) await g.apply(e.eff, L.inDao ? 'cross' : 'home', fought);
+      } finally {
+        trailClose(g, tid);
+      }
       if (g.dead()) return;
     }
   }
@@ -334,7 +358,7 @@ export async function chainLapStart(g: Game) {
 
 // 余波：几圈后兑现一次
 export function addEcho(g: Game, e: NonNullable<Effect['echo']>) {
-  (g.L.echoes ??= []).push({ text: e.text, eff: e.eff, due: lapNo(g) + (e.laps ?? gap()) });
+  (g.L.echoes ??= []).push({ text: e.text, eff: e.eff, due: lapNo(g) + (e.laps ?? gap()), src: trailTop(g) });
 }
 
 // 跨世：家族、宿敌

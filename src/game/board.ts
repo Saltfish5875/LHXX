@@ -14,6 +14,7 @@ import {
 import { chance, pick, randInt, shuffle, weighted } from './rng';
 import { layerUp, retreat } from './cult';
 import { chainBeat, chainLapStart, chainTileFace, chainTileStale, chainTilesDue } from './chains';
+import { trailClose, trailHint, trailOpen } from './trail';
 
 const STOP = 0; // 「止」面
 const DUN = 7; // 「遁」面
@@ -642,10 +643,17 @@ async function land(g: Game, t: Tile): Promise<boolean> {
       t.ttl = 0;
       break;
     }
-    case 'ruin':
-      await landRuin(g, t, fought);
+    case 'ruin': {
+      const lg = (g.M.legacies ?? []).find((x) => x.id === t.ref);
+      const tid = trailOpen(g, { kind: 'ruin', title: lg ? ruinName(lg, ruinForm(g, lg)) : '遗迹', loc: 'realm', text: lg ? `第 ${lg.life} 世留下的${HOLDINGS[lg.type].name}` : undefined });
+      try {
+        await landRuin(g, t, fought);
+      } finally {
+        trailClose(g, tid);
+      }
       t.ttl = 0;
       break;
+    }
     case 'chain': {
       const ref = t.ref!;
       t.ttl = 0;
@@ -954,6 +962,7 @@ async function landConseq(g: Game, t: Tile, fought: { v: boolean }) {
   const def = CONSEQ[t.ref!];
   if (!def) return;
   const loc = L.inDao ? 'cave' : 'home';
+  const src = L.trail?.cqSrc[t.ref!];
   if (def.battle) {
     if (!L.inDao) {
       g.log('村外的林子里有东西转了一圈，又走了。');
@@ -961,10 +970,12 @@ async function landConseq(g: Game, t: Tile, fought: { v: boolean }) {
     }
     g.log(def.text, 'battle');
     fought.v = true;
+    trailHint(g, src, '旧事');
     await g.fight({ kind: 'beast', title: def.name, loc: 'forest', prep: true, reward: 1.3 });
     return;
   }
   const ev: LifeEvent = { id: `Q-${t.ref}`, locs: [], kind: 'choice', text: def.text, options: def.options, repeat: true };
+  trailHint(g, src, '旧事');
   await g.runEvent(ev, loc, fought, def.name);
   if (L.flags.allUpOne) {
     delete L.flags.allUpOne;
