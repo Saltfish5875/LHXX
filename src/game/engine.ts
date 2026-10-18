@@ -23,12 +23,14 @@ import { afterBattleCult, applyIdentity, autoEquip, checkAchievements, drawIdent
 import { estDps } from '../battle/sim';
 import { CHAIN_STARTS, NEMESIS_EVENT, flagEnemyMul, NEW_ENCOUNTERS, addEcho, chainOp, clanBirth, freeAllies, gainSum, giveGain, givePet, petRealmUp, rollBonus } from './chains';
 import { trailArchive, trailChip, trailClose, trailHere, trailHint, trailLine, trailMark, trailOpen, trailPick, trailRef, trailReset, trailTop } from './trail';
+import { ActionCard, EventScene, actionCard, eventScene } from './cards';
 import { ACHIEVEMENTS, GONGFA, IDENTITY_BY_ID, ITEMS, LAYER_NAMES, TIER_NAMES } from '../data/cult';
 
 export interface PromptOption {
   label: string;
   desc?: string;
   disabled?: boolean;
+  card?: ActionCard; // 行动卡：图标、得失、风险（事件选项才有）
 }
 export interface Prompt {
   title: string;
@@ -38,6 +40,7 @@ export interface Prompt {
   key?: string; // 自动模式用于判断是否暂停
   important?: boolean;
   autoPick?: number; // 自动模式 / 模拟脚本的默认选择（棋盘经营类提示）
+  scene?: EventScene; // 场景卡：地点、主体、一句话
 }
 
 export interface IO {
@@ -1158,7 +1161,7 @@ export class Game {
     }
     if (e.eff) await this.apply(e.eff, loc, fought);
     const opts = e.options.filter((o) => !o.when || o.when(L, this.M));
-    const i = await this.ask(title ?? e.title ?? LOC_BY_ID[loc]?.name ?? '抉择', e.text, opts.map((o) => (o.desc ? `${o.label}｜${o.desc}` : o.label)), 'event', false, e.id);
+    const i = await this.askOpts(title ?? e.title ?? LOC_BY_ID[loc]?.name ?? '抉择', e.text, opts, loc, false, e.id);
     const o = opts[i];
     this.log(`${e.text}你选择了「${o.label}」。`, 'normal', { loc });
     await this.applyOption(o, loc, fought);
@@ -2426,9 +2429,19 @@ export class Game {
   }
 
   // ================= IO 包装 =================
-  async ask(title: string, text: string, options: string[], style: Prompt['style'] = 'event', important = false, key?: string): Promise<number> {
-    const i = await this.io.choose({ title, text, options: options.map((o) => { const [label, desc] = o.split('｜'); return { label, desc }; }), style, important, key });
-    const label = (options[i] ?? '').split('｜')[0];
+  // 事件抉择：带场景卡和行动卡
+  async askOpts(title: string, text: string, opts: Option[], loc: string, important = false, key?: string): Promise<number> {
+    const L = this.L;
+    const rn = ERA_BY_ID[L.era ?? 'E1']?.rename?.[loc]?.name;
+    const options = opts.map((o) => ({ label: o.label, desc: o.desc, card: actionCard(o, L) }));
+    const scene = eventScene(text, opts, loc, rn ?? LOC_BY_ID[loc]?.name ?? '人间');
+    return this.ask(title, text, options, 'event', important, key, scene);
+  }
+
+  async ask(title: string, text: string, options: (string | PromptOption)[], style: Prompt['style'] = 'event', important = false, key?: string, scene?: EventScene): Promise<number> {
+    const list = options.map((o) => (typeof o === 'string' ? (([label, desc]) => ({ label, desc }))(o.split('｜')) : o));
+    const i = await this.io.choose({ title, text, options: list, style, important, key, scene });
+    const label = list[i]?.label ?? '';
     // 经历图谱：事件里的抉择记在事件名下；人生大关（抓周、仙缘、择本命……）单独记一笔
     if (trailTop(this) != null) trailPick(this, label);
     else if (this.L && !this.L.deathCause && !this.L.ended && style === 'milestone') {

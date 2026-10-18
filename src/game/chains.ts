@@ -154,7 +154,7 @@ export async function chainBeat(g: Game, id: string, loc: string, fought: { v: b
 async function beatBody(g: Game, st: ChainState, d: ChainDef, n: number, beat: ChainBeat, ok: ChainOption[], title: string, text: string, loc: string, fought: { v: boolean }, ending: ChainEnding | undefined) {
   const L = g.L;
   const id = st.id;
-  const i = await g.ask(title, text, ok.map((o) => (o.desc ? `${o.label}｜${o.desc}` : o.label)), 'event', true, 'chain');
+  const i = await g.askOpts(title, text, ok, loc, true, 'chain');
   const o = ok[i];
   g.log(`【${d.name}·${BEAT_LABELS[n]}】${text.replace(/\n+/g, '')}你选择了「${o.label}」。`, 'fate', { loc });
   const prev = g.curChain;

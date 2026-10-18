@@ -31,14 +31,25 @@
       </header>
       <main class="layout">
         <section class="scroll-wrap">
-          <button class="mstatus m-only" id="mstatus" aria-label="查看角色"></button>
+          <div class="mhead m-only">
+            <button class="mstatus" id="mstatus" aria-label="查看角色"></button>
+            <button class="m-gear mui-only" data-open="settings" aria-label="设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8Zm8.2 4.6-1.7-.3a6.7 6.7 0 0 1-.6 1.5l1 1.4-1.6 1.6-1.4-1a6.7 6.7 0 0 1-1.5.6l-.3 1.7h-2.2l-.3-1.7a6.7 6.7 0 0 1-1.5-.6l-1.4 1-1.6-1.6 1-1.4a6.7 6.7 0 0 1-.6-1.5l-1.7-.3v-2.2l1.7-.3c.1-.5.3-1 .6-1.5l-1-1.4 1.6-1.6 1.4 1c.5-.3 1-.5 1.5-.6l.3-1.7h2.2l.3 1.7c.5.1 1 .3 1.5.6l1.4-1 1.6 1.6-1 1.4c.3.5.5 1 .6 1.5l1.7.3Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
+          </div>
           <div class="scene" id="scene" aria-hidden="true"></div>
+          <div class="mlog-head mui-only"><b>此生经历</b><button class="btn sm" data-open="trail">经历图谱</button><button class="btn sm" data-open="main">收起</button></div>
           <div class="scroll" id="scroll" role="log" aria-label="此生经历" aria-live="off" tabindex="0"></div>
           <div class="deal" id="deal"></div>
         </section>
         <div class="panel-mask" id="panel-mask"></div>
         <aside class="panel" id="panel"></aside>
       </main>
+      <nav class="mtabs mui-only" aria-label="主菜单">
+        <button class="mtab on" data-open="main"><b>途</b><small>历练</small></button>
+        <button class="mtab bag-top-btn" data-open="bag"><b>囊</b><small>行囊</small></button>
+        <button class="mtab" data-open="panel"><b>我</b><small>角色</small></button>
+        <button class="mtab" data-open="log"><b>迹</b><small>经历</small></button>
+        <button class="mtab" data-open="more"><b class="dots"><i></i><i></i><i></i></b><small>更多</small></button>
+      </nav>
     </div>
     <div class="modal-root" id="modal"></div>
     <div class="battle-root" id="battle"></div>

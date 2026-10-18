@@ -1,14 +1,18 @@
 import './style.css';
 import './art/art.css';
+import './art/cards.css';
+import './art/mobile.css';
 import { Game, IO, Prompt, skillName } from './game/engine';
 import { BEAT_LABELS, CHAIN_BY_ID, activeChains } from './game/chains';
-import { RollAction, RollView, autoAgain, autoDie, autoNudge, faceName, tileSceneLoc } from './game/board';
+import { RollAction, RollView, TileView, autoAgain, autoDie, autoNudge, faceName, tileSceneLoc } from './game/board';
 import { HOLDINGS } from './data/board';
 import { loadLife, loadMeta, resetAll, saveMeta, lampOf } from './game/meta';
 import { OFFER_KEY, PRESETS, SLOT_COUNT, SaveFile, applySave, currentSave, deleteSlot, fetchPreset, fileName, hasProgress, readSlot, stamp, summary, validate, writeSlot } from './game/saves';
 import { runBattle } from './battle/view';
 import { openBag } from './bag';
 import { openTrail } from './trail-view';
+import { renderEventCard, useCards } from './event-card';
+import { leadLine } from './game/cards';
 import { bookEntries, dizhun, enemyMul, gongLine, identityLine, identityOpen } from './game/cult';
 import { ACHIEVEMENTS, GONGFA, GF_GRADES, IDENTITIES, TIER_NAMES } from './data/cult';
 import { FATE_BY_ID } from './data/fate';
@@ -20,7 +24,7 @@ import { LOC_BY_ID } from './data/events';
 import { Scene } from './art/scene';
 import { moment, momentsIdle, setMomentSpeed } from './art/moments';
 import { sfx, setSound, soundOn } from './art/sound';
-import { Chip, clearOutcome, showOutcome, stampCard, stampOption, sweep } from './art/feedback';
+import { Chip, clearOutcome, playResult, showOutcome, stampCard, stampOption, sweep } from './art/feedback';
 import { boardBackdrop, boardGeometry, tileGraphic, tilePosition } from './art/board';
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -40,6 +44,7 @@ function togglePanel(open?: boolean) {
   const on = open ?? !panelEl.classList.contains('open');
   panelEl.classList.toggle('open', on);
   panelMask.classList.toggle('open', on);
+  syncTabs();
 }
 mstatusEl.onclick = () => togglePanel();
 panelMask.onclick = () => togglePanel(false);
@@ -69,21 +74,30 @@ async function choose(p: Prompt): Promise<number> {
   await momentsIdle();
   if (p.style === 'well' || p.style === 'epitaph') scene.set({ mode: 'well' });
   return new Promise((resolve) => {
+    const cards = useCards(p);
     const box = openModal(
-      `<h2>${esc(p.title)}</h2><div class="prompt-text">${nl(p.text)}</div><div class="opts"></div><div class="hint">数字键 1～${p.options.length} 快速选择</div>`,
-      `style-${p.style ?? 'event'}`,
+      cards ? '' : `<h2>${esc(p.title)}</h2><div class="prompt-text">${nl(p.text)}</div><div class="opts"></div><div class="hint">数字键 1～${p.options.length} 快速选择</div>`,
+      `style-${p.style ?? 'event'}${cards ? ' ec-modal' : ''}`,
     );
-    const opts = box.querySelector('.opts')!;
-    const enabled: number[] = [];
-    p.options.forEach((o, i) => {
-      const b = document.createElement('button');
-      b.className = 'opt';
-      b.disabled = !!o.disabled;
-      b.innerHTML = `<b>${i + 1}. ${esc(o.label)}</b>${o.desc ? `<span>${esc(o.desc)}</span>` : ''}`;
-      b.onclick = () => done(i);
-      opts.appendChild(b);
-      if (!o.disabled) enabled.push(i);
-    });
+    let stopPic = () => {};
+    let opts: Element;
+    if (cards) {
+      // 场景卡 + 行动卡
+      const r = renderEventCard(box, p, scene);
+      opts = r.opts;
+      stopPic = r.stop;
+      r.buttons.forEach((b, i) => (b.onclick = () => done(i)));
+    } else {
+      opts = box.querySelector('.opts')!;
+      p.options.forEach((o, i) => {
+        const b = document.createElement('button');
+        b.className = 'opt';
+        b.disabled = !!o.disabled;
+        b.innerHTML = `<b>${i + 1}. ${esc(o.label)}</b>${o.desc ? `<span>${esc(o.desc)}</span>` : ''}`;
+        b.onclick = () => done(i);
+        opts.appendChild(b);
+      });
+    }
     const onKey = (e: KeyboardEvent) => {
       const n = Number(e.key) - 1;
       if (n >= 0 && n < p.options.length && !p.options[n].disabled) done(n);
@@ -113,9 +127,12 @@ async function choose(p: Prompt): Promise<number> {
       sfx.pluck(i + 2, 0.35);
       // 只有两项以上的真选择才落印、记得失；「继续」「开卷」这类单按钮直接过
       if (p.options.length > 1) {
+        const chosen = opts.querySelectorAll<HTMLElement>('.opt')[i];
+        flyFrom = chosen ? chosen.getBoundingClientRect() : null;
         await stampOption([...opts.querySelectorAll<HTMLElement>('.opt')], i, auto);
         beginChoice(p.options[i].label);
       }
+      stopPic();
       closeModal();
       resolve(i);
     }
@@ -221,6 +238,66 @@ const AUTO_KEYS = new Set(['oracle', 'hold', 'build', 'holdBranch', 'retreat', '
 const BAG_KEYS = new Set(['battlePrep', 'retreat', 'market', 'gongSwap']);
 const compactBoardScreen = matchMedia('(max-width: 980px), (max-height: 500px) and (pointer: coarse)');
 let boardExpanded: boolean | null = null; // 未手动切换时，窄屏默认收起，桌面默认展开
+// 手机竖屏：棋盘常驻主界面，底部页签，经历收进「刚才」小卡
+const mobileUI = matchMedia('(max-width: 760px)');
+// 手机上棋盘的放大倍数（按格数记）：大棋盘默认放大、跟着棋子走
+const mapZoom: Record<number, number> = {};
+const defaultZoom = (n: number) => (n >= 24 ? 1.7 : n >= 20 ? 1.45 : 1);
+const TAG_CHIP: Record<string, [string, Chip['tone']]> = { 劫: ['劫难', 'down'], 凶: ['凶险', 'down'], 缘: ['可能结缘', 'gold'], 引: ['引子', 'gold'], 故: ['故人', 'neutral'], 平: ['平安', 'up'] };
+function tileChips(t: TileView): string {
+  const tag = TAG_CHIP[t.tag ?? '平'];
+  const out = tag ? [`<i class="${tag[1]}">${tag[0]}</i>`] : [];
+  if (t.lv) out.push(`<i class="neutral">${t.lv} 级</i>`);
+  return `<div class="mc-chips">${out.join('')}</div>`;
+}
+
+// 「刚才」小卡：上一次掷骰之后发生的事，一句话 + 得失小签
+const recent = { age: -1, lines: [] as string[], lead: null as string | null, chips: [] as Chip[], fresh: false };
+function noteRecent(e: LogEntry) {
+  if (recent.fresh) {
+    recent.fresh = false;
+    recent.lines = [];
+    recent.lead = null;
+    recent.chips = [];
+  }
+  recent.age = e.age;
+  recent.lines.push(e.text);
+  if (recent.lines.length > 20) recent.lines.shift();
+}
+function recentHtml(): string {
+  let text = recent.lead ?? recent.lines[recent.lines.length - 1] ?? '';
+  let age = recent.age >= 0 ? recent.age : game?.L?.age ?? 0;
+  if (!text && game?.L) {
+    // 续档、刚入世：从这一世的记录里找最近一句
+    const last = [...game.L.log].reverse().find((e) => e.text && !/^【|^流年：/.test(e.text) && !e.text.includes('你选择了「'));
+    if (last) [text, age] = [last.text, last.age];
+  }
+  const chips = recent.chips.slice(0, 4).map((c) => `<i class="${c.tone}">${esc(c.text)}</i>`).join('');
+  return `<div class="mc-head"><span>刚才 · ${cnAge(age)}岁</span><button class="mc-link" type="button" data-a="log">全部经历 ›</button></div>
+    <div class="mc-text">${esc(text || '新的一世刚刚开始。')}</div>${chips ? `<div class="mc-chips">${chips}</div>` : ''}`;
+}
+function updateRecentCard() {
+  const el = dealEl.querySelector<HTMLElement>('.mb-card.recent');
+  if (!el) return;
+  el.innerHTML = recentHtml();
+  const link = el.querySelector<HTMLButtonElement>('[data-a="log"]');
+  if (link) link.onclick = () => openSection('log');
+}
+// 手机上一次掷骰结束后，棋盘留在主界面，只是不能点
+function idleBoard() {
+  const b = dealEl.querySelector('.board');
+  if (!b) return;
+  b.classList.add('idle');
+  b.classList.remove('peeking', 'choosing');
+  dealEl.querySelectorAll('.tile').forEach((t) => t.classList.remove('target', 'in-path', 'focused', 'peekable'));
+  dealEl.querySelectorAll('.land-tip, .tile-tip').forEach((x) => x.remove());
+  dealEl.querySelectorAll<HTMLButtonElement>('button').forEach((x) => {
+    if (x.dataset.a !== 'log') x.disabled = true;
+  });
+  const card = dealEl.querySelector('.mb-card');
+  if (card) card.className = 'mb-card recent';
+  updateRecentCard();
+}
 let lastRollAct: RollAction['action'] | null = null;
 // 上一次落子的格子与结算出来的简略结果（下一次摆盘时冒在那一格上）
 let landed: { life: number; size: number; slot: number; tip?: { chips: Chip[]; caption: string | null } } | null = null;
@@ -275,21 +352,8 @@ async function roll(v: RollView): Promise<RollAction> {
       return `<button class="die-btn${d === 0 ? ' f-stop' : d === 7 ? ' f-dun' : d === -1 ? ' f-jie' : ''}" data-d="0"><span class="die">${dieFace(d)}</span><small>${esc(goText)}</small></button>
         <button class="again-btn" data-a="reroll" ${v.again <= 0 ? 'disabled' : ''}>${v.again > 0 ? `再摇一次<small>本世还剩 ${v.again} 次</small>` : '再摇用尽<small>事件可得</small>'}</button>`;
     };
-    const render = () => {
-      const mapScroll = dealEl.querySelector('.board-viewport')?.scrollLeft ?? 0;
-      const controlsScroll = dealEl.scrollTop;
-      const followLog = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 40;
-      const activeTile = document.activeElement?.closest<HTMLButtonElement>('.tile')?.dataset.s;
-      const activeAction = document.activeElement?.closest<HTMLButtonElement>('button[data-a]')?.dataset.a;
-      const expanded = boardExpanded ?? !compactBoardScreen.matches;
-      const targets = ruyiMode ? ruyiTargets : rolled ? v.targets : [];
-      const info = focus !== null ? v.tiles[focus] : null;
-      dealEl.innerHTML = `
-        <div class="board s${k}${expanded ? '' : ' collapsed'}${ruyiMode ? ' choosing' : ''}${v.gathered ? ' gathered' : ''}${peekMode ? ' peeking' : ''}" style="--k:${k};--map-ratio:${geometry.ratio}">
-          <div class="board-heading"><b>命途棋盘</b><span>${esc(v.stageName)} · ${n} 格</span><button class="btn sm board-toggle" data-a="board" aria-expanded="${expanded}" aria-controls="board-map-panel">${expanded ? '收起棋盘' : '展开棋盘'}</button></div>
-          <div class="board-viewport" id="board-map-panel" ${expanded ? '' : 'hidden'}><div class="board-map" role="group" aria-label="${esc(v.stageName)}命途棋盘，${n}格，顺时针行进">
-          ${boardBackdrop(n, esc(v.stageName))}
-          ${v.tiles
+    const tileButtons = (targets: number[]) =>
+      v.tiles
             .map((t) => {
               const cls = [
                 'tile',
@@ -312,7 +376,22 @@ async function roll(v: RollView): Promise<RollAction> {
                 ${t.lv ? `<span class="t-lv">${t.lv}</span>` : ''}
               </button>`;
             })
-            .join('')}
+            .join('');
+    const renderDesktop = () => {
+      const mapScroll = dealEl.querySelector('.board-viewport')?.scrollLeft ?? 0;
+      const controlsScroll = dealEl.scrollTop;
+      const followLog = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 40;
+      const activeTile = document.activeElement?.closest<HTMLButtonElement>('.tile')?.dataset.s;
+      const activeAction = document.activeElement?.closest<HTMLButtonElement>('button[data-a]')?.dataset.a;
+      const expanded = boardExpanded ?? !compactBoardScreen.matches;
+      const targets = ruyiMode ? ruyiTargets : rolled ? v.targets : [];
+      const info = focus !== null ? v.tiles[focus] : null;
+      dealEl.innerHTML = `
+        <div class="board s${k}${expanded ? '' : ' collapsed'}${ruyiMode ? ' choosing' : ''}${v.gathered ? ' gathered' : ''}${peekMode ? ' peeking' : ''}" style="--k:${k};--map-ratio:${geometry.ratio}">
+          <div class="board-heading"><b>命途棋盘</b><span>${esc(v.stageName)} · ${n} 格</span><button class="btn sm board-toggle" data-a="board" aria-expanded="${expanded}" aria-controls="board-map-panel">${expanded ? '收起棋盘' : '展开棋盘'}</button></div>
+          <div class="board-viewport" id="board-map-panel" ${expanded ? '' : 'hidden'}><div class="board-map" role="group" aria-label="${esc(v.stageName)}命途棋盘，${n}格，顺时针行进">
+          ${boardBackdrop(n, esc(v.stageName))}
+          ${tileButtons(targets)}
           ${tipHtml()}
           </div></div>
           <div class="board-center">
@@ -344,6 +423,143 @@ async function roll(v: RollView): Promise<RollAction> {
       if (followLog) scrollEl.scrollTop = scrollEl.scrollHeight;
       if (activeTile !== undefined && expanded) dealEl.querySelector<HTMLButtonElement>(`.tile[data-s="${activeTile}"]`)?.focus({ preventScroll: true });
       else if (activeAction !== undefined) dealEl.querySelector<HTMLButtonElement>(`button[data-a="${activeAction}"]`)?.focus({ preventScroll: true });
+      bind();
+    };
+    // ---- 手机：棋盘常驻，一颗大按钮 ----
+    let recenter = true; // 下一次摆盘时把视野对准棋子（或落点）
+    const zoomNow = () => mapZoom[n] ?? defaultZoom(n);
+    const viewport = () => dealEl.querySelector<HTMLElement>('.board-viewport');
+    // 棋盘先按可用空间放下整圈，再乘放大倍数
+    const layoutMap = () => {
+      const vp = viewport();
+      const map = vp?.querySelector<HTMLElement>('.board-map');
+      if (!vp || !map || !vp.clientWidth || !vp.clientHeight) return;
+      const fit = Math.min(vp.clientWidth, vp.clientHeight * geometry.ratio);
+      map.style.width = `${Math.round(fit * zoomNow())}px`;
+      const full = dealEl.querySelector<HTMLButtonElement>('[data-a="full"]');
+      if (full) {
+        full.hidden = n < 20 && zoomNow() === 1;
+        full.textContent = zoomNow() > 1 ? '全图' : '跟随';
+      }
+    };
+    const centerOn = (el: HTMLElement | null | undefined, smooth = false) => {
+      const vp = viewport();
+      const map = vp?.querySelector<HTMLElement>('.board-map');
+      if (!el || !vp || !map || zoomNow() <= 1) return;
+      const x = map.offsetLeft + el.offsetLeft + el.offsetWidth / 2 - vp.clientWidth / 2;
+      const y = map.offsetTop + el.offsetTop + el.offsetHeight * 0.55 - vp.clientHeight / 2;
+      vp.scrollTo({ left: x, top: y, behavior: smooth ? 'smooth' : 'auto' });
+    };
+    // 双指缩放：只缩棋盘，不缩整页
+    const pinch = (vp: HTMLElement) => {
+      let d0 = 0;
+      let z0 = 1;
+      const dist = (e: TouchEvent) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      vp.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+          d0 = dist(e);
+          z0 = zoomNow();
+        }
+      }, { passive: true });
+      vp.addEventListener('touchmove', (e) => {
+        if (e.touches.length !== 2 || !d0) return;
+        e.preventDefault();
+        const map = vp.querySelector<HTMLElement>('.board-map');
+        if (!map) return;
+        const r = vp.getBoundingClientRect();
+        const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left;
+        const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - r.top;
+        const fx = (vp.scrollLeft + mx - map.offsetLeft) / map.offsetWidth;
+        const fy = (vp.scrollTop + my - map.offsetTop) / map.offsetHeight;
+        mapZoom[n] = Math.max(1, Math.min(2.4, (z0 * dist(e)) / d0));
+        layoutMap();
+        vp.scrollLeft = map.offsetLeft + fx * map.offsetWidth - mx;
+        vp.scrollTop = map.offsetTop + fy * map.offsetHeight - my;
+      }, { passive: false });
+      vp.addEventListener('touchend', (e) => {
+        if (e.touches.length < 2) d0 = 0;
+      });
+    };
+    const renderMobile = () => {
+      const vp0 = viewport();
+      const keep = vp0 && !recenter ? { l: vp0.scrollLeft, t: vp0.scrollTop } : null;
+      const targets = ruyiMode ? ruyiTargets : rolled ? v.targets : [];
+      const tgt = rolled && !ruyiMode ? v.targets[0] : null;
+      const tile = (s: number | null) => (s !== null && s < n ? v.tiles[s] : null);
+      // 落点小牌子：掷出后挂在要去的那一格上
+      const land = tile(tgt);
+      const landTip = land && tgt !== v.pos ? `<div class="land-tip" style="${tilePosition(n, land.slot).tipStyle}"><span>${esc(land.name)}${land.tag && land.tag !== '平' ? `<em class="${TAG_CLASS[land.tag]}">${land.tag}</em>` : ''}${land.peek || land.hint ? `<small>${esc(land.peek ?? land.hint)}</small>` : ''}</span></div>` : '';
+      // 中间这张小卡：窥命 / 如意骰 / 点开的格子 / 落点预告 / 刚才
+      let cardCls = 'recent';
+      let card = '';
+      const info = tile(focus);
+      if (peekMode) {
+        cardCls = 'hint';
+        card = `<div class="mc-head"><span>窥命 · 本圈还剩 ${v.rerolls} 次</span></div><div class="mc-text">点一格虚线圈出的地点，看它这一圈会发生什么。</div>`;
+      } else if (ruyiMode) {
+        cardCls = 'hint';
+        card = `<div class="mc-head"><span>如意骰 · 任选点数</span></div><div class="mc-dice">${ruyiTargets.map((s, i) => `<button class="die-btn ruyi" data-r="${i + 1}"><span class="die">${dieFace(i + 1)}</span><small>${esc(targetName(s))}</small></button>`).join('')}</div>`;
+      } else if (info) {
+        cardCls = 'tile-info';
+        card = `<div class="mc-head"><span>${esc(info.month)} · ${esc(info.name)}</span>${targets.includes(info.slot) ? '<span class="mc-steps">点亮着的格子就走</span>' : ''}</div><div class="mc-text">${esc(info.peek ? '窥得：' + info.peek : info.hint || '没什么特别的。')}</div>${tileChips(info)}`;
+      } else if (tgt !== null) {
+        cardCls = 'landing';
+        if (land && tgt !== v.pos) card = `<div class="mc-head"><span>落点 · ${esc(land.name)}</span><span class="mc-steps">走 ${tgt - v.pos} 格</span></div><div class="mc-text">${esc(land.peek ? '窥得：' + land.peek : land.hint || '没什么特别的。')}</div>${tileChips(land)}`;
+        else if (tgt >= n) card = `<div class="mc-head"><span>落点 · 岁首</span><span class="mc-steps">走 ${n - v.pos} 格</span></div><div class="mc-text">越过岁首，这一圈到此为止。</div>`;
+        else card = `<div class="mc-head"><span>落点 · 原地</span></div><div class="mc-text">骰子停住，这一步不走。</div>`;
+      } else card = recentHtml();
+      const extras = [
+        rolled && v.nudge ? `<button class="btn sm" data-a="nudge-" ${v.dice[0] <= 1 ? 'disabled' : ''}>龙驹 −1</button><button class="btn sm" data-a="nudge+" ${v.dice[0] >= 6 ? 'disabled' : ''}>龙驹 +1</button>` : '',
+        v.ruyi > 0 ? `<button class="btn sm ${ruyiMode ? 'active' : ''}" data-a="ruyi">如意骰（${v.ruyi}）</button>` : '',
+        v.canRewind ? '<button class="btn sm" data-a="rewind">掌天瓶·回溯</button>' : '',
+      ].join('');
+      const d = v.dice[0];
+      const goName = tgt === null ? '' : tgt >= n ? '过岁首' : tgt === v.pos ? '原地不动' : `走到${v.tiles[tgt].name}`;
+      const left = rolled && !ruyiMode
+        ? `<button class="mb-again" data-a="reroll" ${v.again <= 0 ? 'disabled' : ''}><b>再摇</b><small>${v.again > 0 ? `本世剩 ${v.again} 次` : '已用完'}</small></button>`
+        : `<button class="mb-round ${peekMode ? 'active' : ''}" data-a="peek" ${v.rerolls <= 0 ? 'disabled' : ''}><b>窥</b><small>改命 ${v.rerolls}</small></button>`;
+      const main = rolled && !ruyiMode
+        ? `<button class="mb-main go die-btn${d === 0 ? ' f-stop' : d === 7 ? ' f-dun' : d === -1 ? ' f-jie' : ''}" data-d="0"><span class="dice"><span class="die">${dieFace(d)}</span></span><b>${esc(goName)}</b></button>`
+        : `<button class="mb-main roll" data-a="roll"><span class="dice"><span class="die blank">${dieFace(randFace())}</span></span><b>掷 骰</b></button>`;
+      const right = `<button class="mb-round ${auto ? 'active' : ''}" data-a="auto"><b>自</b><small>${auto ? '自动中' : '自动'}</small></button>`;
+      dealEl.innerHTML = `
+        <div class="board mb s${k}${ruyiMode ? ' choosing' : ''}${v.gathered ? ' gathered' : ''}${peekMode ? ' peeking' : ''}${rolled ? ' rolled' : ''}" style="--k:${k};--map-ratio:${geometry.ratio}">
+          <div class="mb-head"><span class="mb-sign${v.gathered ? ' gathered' : ''}"><i>签</i><span>${esc(v.sign)}</span></span><span class="mb-where">${esc(v.stageName)} · 第 ${v.lap + 1} 圈 · 停 ${v.stops}/${v.maxStops}</span></div>
+          <div class="mb-stage">
+            <div class="board-viewport"><div class="board-map" role="group" aria-label="${esc(v.stageName)}命途棋盘，${n}格，顺时针行进">
+              ${boardBackdrop(n, esc(v.stageName))}
+              ${tileButtons(targets)}
+              ${tipHtml()}${landTip}
+            </div></div>
+            <button class="mb-full" data-a="full" type="button">全图</button>
+          </div>
+          <div class="mb-card ${cardCls}" role="status" aria-live="polite">${card}</div>
+          ${extras ? `<div class="mb-extra">${extras}</div>` : ''}
+          <div class="mb-ctrl">${left}${main}${right}</div>
+        </div>`;
+      layoutMap();
+      const vp = viewport();
+      if (vp) {
+        pinch(vp);
+        if (keep) {
+          vp.scrollLeft = keep.l;
+          vp.scrollTop = keep.t;
+        } else {
+          const at = tgt !== null && tgt < n && tgt !== v.pos ? tgt : v.pos;
+          centerOn(dealEl.querySelector<HTMLElement>(`.tile[data-s="${at}"]`));
+        }
+      }
+      recenter = false;
+      bind();
+    };
+    const onResize = () => {
+      if (!mobileUI.matches || !dealEl.querySelector('.board.mb')) return;
+      layoutMap();
+    };
+    window.addEventListener('resize', onResize);
+    const render = () => (mobileUI.matches ? renderMobile() : renderDesktop());
+    const bind = () => {
+      const expanded = boardExpanded ?? !compactBoardScreen.matches;
       dealEl.querySelectorAll<HTMLButtonElement>('.tile').forEach((b) => (b.onclick = () => tapTile(Number(b.dataset.s))));
       dealEl.querySelectorAll<HTMLButtonElement>('.die-btn[data-d]').forEach((b) => (b.onclick = () => go(Number(b.dataset.d))));
       dealEl.querySelectorAll<HTMLButtonElement>('.die-btn[data-r]').forEach((b) => (b.onclick = () => go(-1, Number(b.dataset.r))));
@@ -369,17 +585,23 @@ async function roll(v: RollView): Promise<RollAction> {
             peekMode = !peekMode;
             if (peekMode) boardExpanded = true;
             ruyiMode = false;
+            focus = null;
             render();
           } else if (a === 'ruyi') {
             ruyiMode = !ruyiMode;
             peekMode = false;
+            focus = null;
             render();
           } else if (a === 'rewind') finish({ action: 'rewind' });
           else if (a === 'auto') {
             auto = !auto;
             render();
             if (auto) scheduleAuto();
-          }
+          } else if (a === 'full') {
+            mapZoom[n] = zoomNow() > 1 ? 1 : Math.max(1.45, defaultZoom(n));
+            recenter = true;
+            render();
+          } else if (a === 'log') openSection('log');
         };
       });
     };
@@ -391,7 +613,9 @@ async function roll(v: RollView): Promise<RollAction> {
       ruyiMode = false;
       const box = dealEl.querySelector('.dice');
       if (box) {
-        box.innerHTML = v.dice.map((_, i) => `<span class="die-btn"><span class="die rolling" style="--i:${i}">${dieFace(randFace())}</span><small>&nbsp;</small></span>`).join('');
+        box.innerHTML = mobileUI.matches
+          ? `<span class="die rolling">${dieFace(randFace())}</span>`
+          : v.dice.map((_, i) => `<span class="die-btn"><span class="die rolling" style="--i:${i}">${dieFace(randFace())}</span><small>&nbsp;</small></span>`).join('');
         const els = [...box.querySelectorAll<HTMLElement>('.die')];
         const t0 = performance.now();
         const dur = auto ? 260 / meta.settings.speed : 620;
@@ -404,6 +628,8 @@ async function roll(v: RollView): Promise<RollAction> {
       rolled = true;
       tumbling = false;
       shownDice = key;
+      focus = null;
+      recenter = true;
       render();
       dealEl.querySelectorAll('.die-btn .die').forEach((el) => el.classList.add('landed'));
       sfx.pluck(3, 0.35);
@@ -421,7 +647,8 @@ async function roll(v: RollView): Promise<RollAction> {
         if (i >= 0 && slot !== v.pos) return go(-1, i + 1);
       } else if (rolled) {
         const i = v.targets.indexOf(slot);
-        if (i >= 0 && slot !== v.pos && focus === slot) return go(i);
+        // 手机上点亮着的落点直接走；桌面先点一下看说明，再点一下走
+        if (i >= 0 && slot !== v.pos && (focus === slot || mobileUI.matches)) return go(i);
       }
       focus = focus === slot ? null : slot;
       render();
@@ -440,6 +667,7 @@ async function roll(v: RollView): Promise<RollAction> {
         tiles.forEach((el) => { el.classList.remove('here'); el.removeAttribute('aria-current'); });
         tiles[s]?.classList.add('here', 'passing');
         tiles[s]?.setAttribute('aria-current', 'location');
+        if (mobileUI.matches) centerOn(tiles[s], true);
         await sleep(step);
       }
       const act: RollAction = ruyi ? { action: 'ruyi', value: ruyi } : { action: 'go', die };
@@ -473,12 +701,17 @@ async function roll(v: RollView): Promise<RollAction> {
     window.addEventListener('keydown', onKey);
     const onBoardScreen = () => render();
     compactBoardScreen.addEventListener('change', onBoardScreen);
+    mobileUI.addEventListener('change', onBoardScreen);
     function finish(a: RollAction) {
       if (timer) clearTimeout(timer);
       window.removeEventListener('keydown', onKey);
       compactBoardScreen.removeEventListener('change', onBoardScreen);
+      mobileUI.removeEventListener('change', onBoardScreen);
+      window.removeEventListener('resize', onResize);
       lastRollAct = a.action;
-      dealEl.innerHTML = '';
+      // 手机上棋盘留在主界面（变灰不可点），事件卡从下面升起时还看得见自己站在哪
+      if (mobileUI.matches && dealEl.querySelector('.board.mb')) idleBoard();
+      else dealEl.innerHTML = '';
       resolve(a);
     }
     function scheduleAuto() {
@@ -502,6 +735,7 @@ async function roll(v: RollView): Promise<RollAction> {
       }, 380 / meta.settings.speed);
     }
     render();
+    recent.fresh = true; // 这次掷骰之后的经历，另起一张「刚才」
     if (autoTumble) void tumble();
     else if (auto) scheduleAuto();
   });
@@ -540,6 +774,12 @@ interface Stats {
   xinde: number;
   fj: number;
   traces: number;
+  partner: boolean;
+  pet: string | null;
+  gains: string[];
+  chains: number;
+  acq: number;
+  disciples: number;
 }
 function stats(): Stats | null {
   const L = game?.L;
@@ -565,9 +805,16 @@ function stats(): Stats | null {
     xinde: L.xinde ?? 0,
     fj: (L.fjBag?.length ?? 0) + (L.bag ?? []).reduce((a, t) => a + (t.fj?.length ?? 0), 0),
     traces: L.traces.length,
+    partner: !!L.partner,
+    pet: L.pet?.name ?? null,
+    gains: (L.gains ?? []).map((g) => g.name),
+    chains: activeChains(L).length,
+    acq: game.M.acquaintances?.length ?? 0,
+    disciples: L.disciples ?? 0,
   };
 }
-let pending: { snap: Stats; label: string; caption: string | null } | null = null;
+let pending: { snap: Stats; label: string; caption: string | null; judge?: string } | null = null;
+let flyFrom: DOMRect | null = null; // 刚选中的那张行动卡，结果从这里飞出去
 function beginChoice(label: string) {
   if (replaying) return;
   const snap = stats();
@@ -600,6 +847,12 @@ function diffChips(a: Stats, b: Stats): Chip[] {
   for (const uid of Object.keys(b.qi)) if (a.qi[uid] === undefined) out.push({ text: '得一件法宝', tone: 'gold' });
   if (b.fj > a.fj) out.push({ text: `附诀 +${b.fj - a.fj}`, tone: 'gold' });
   num('心得', b.xinde - a.xinde);
+  if (b.partner && !a.partner) out.push({ text: '结为道侣', tone: 'gold' });
+  if (b.pet && b.pet !== a.pet) out.push({ text: `得灵宠「${b.pet}」`, tone: 'gold' });
+  for (const g of b.gains) if (!a.gains.includes(g)) out.push({ text: `得「${g}」`, tone: 'gold' });
+  if (b.disciples > a.disciples) out.push({ text: '收徒', tone: 'gold' });
+  if (b.chains > a.chains) out.push({ text: '结下一段缘', tone: 'gold' });
+  if (b.acq > a.acq) out.push({ text: '结识故人', tone: 'neutral' });
   if (b.traces > a.traces) out.push({ text: '留下一道痕迹', tone: 'neutral' });
   return out.slice(0, 7);
 }
@@ -611,9 +864,20 @@ function settle() {
   const now = stats();
   if (!now || now.life !== p.snap.life) return;
   const chips = diffChips(p.snap, now);
-  let line = p.caption;
-  if (line && line.length > 46) line = line.slice(0, 45) + '…';
-  showOutcome(sceneHost, line, chips, auto ? meta.settings.speed * 1.6 : 1);
+  // 结算一句话：判定成败 + 结果原文的第一句；什么都没变就说一声
+  let line = p.caption ? leadLine(p.caption).lead : null;
+  if (p.judge) line = p.judge + (line ?? '');
+  if (line && line.length > 52) line = line.slice(0, 51) + '…';
+  if (!line && !chips.length && p.label && flyFrom) line = `「${p.label}」，此事就此了了。`;
+  const speed = auto ? meta.settings.speed * 1.6 : 1;
+  showOutcome(sceneHost, line, chips, speed);
+  // 手机上结果小签留在「刚才」卡里
+  if (line) recent.lead = line;
+  recent.chips = chips;
+  updateRecentCard();
+  const card = mobileUI.matches ? dealEl.querySelector<HTMLElement>('.mb-card') : null;
+  playResult(chips, flyFrom, card ?? sceneHost, speed);
+  flyFrom = null;
   // 棋盘上落子的那一格，冒一个简略结果
   if (landed) landed.tip = { chips: chips.slice(0, 3), caption: line };
 }
@@ -644,6 +908,7 @@ function log(e: LogEntry) {
     if (e.kind === 'death') {
       pending = null;
       clearOutcome();
+      dealEl.innerHTML = ''; // 手机上留着的棋盘收掉，卷轴整页显示这一世的结局
       const L = game.L;
       const big = e.text.startsWith('隐藏结局') ? e.text.replace('隐藏结局 · ', '') : L.ended === '叩门' ? '叩门' : L.deathCause ?? '卒';
       moment({ kind: 'death', big, sub: `第 ${L.lifeNo} 世 · ${cnAge(L.age)}岁`, line: e.text, seal: L.ended === '叩门' ? '门' : '卒' });
@@ -660,7 +925,17 @@ function log(e: LogEntry) {
     scrollEl.appendChild(h);
     lastAge = e.age;
   }
-  if (pending && !replaying && !pending.caption && e.kind !== 'fate' && e.kind !== 'death') pending.caption = e.text;
+  // 「流年：……」已经写在棋盘顶上的签里，不再进「刚才」
+  if (!replaying && !/^【|^流年：/.test(e.text) && !e.text.includes('你选择了「')) {
+    noteRecent(e);
+    updateRecentCard();
+  }
+  if (pending && !replaying && e.kind !== 'death' && !/^【/.test(e.text)) {
+    // 「……你选择了「X」。」是复述，不算结果；判定成败单独记
+    const j = e.text.match(/^（(.{2})判定(成功|失败)）$/);
+    if (j) pending.judge = j[2] === '成功' ? '成了。' : '没成。';
+    else if (!pending.caption && !e.text.includes('你选择了「')) pending.caption = e.text;
+  }
   const d = document.createElement('div');
   d.className = `entry k-${e.kind ?? 'normal'}${replaying ? '' : ' fresh'}`;
   d.textContent = e.text;
@@ -669,6 +944,11 @@ function log(e: LogEntry) {
 }
 function clearLog() {
   scrollEl.innerHTML = '';
+  dealEl.innerHTML = '';
+  recent.age = -1;
+  recent.lines = [];
+  recent.lead = null;
+  recent.chips = [];
   lastAge = -1;
   replaying = true;
 }
@@ -899,11 +1179,13 @@ function showSettings() {
   const box = openModal(`<h2>设置</h2>
     <div class="set-row"><b>自动倾向</b>${(['safe', 'chance', 'war'] as Tendency[]).map((t) => `<label><input type="radio" name="t" value="${t}" ${meta.settings.tendency === t ? 'checked' : ''}>${TEND_NAMES[t]}</label>`).join('')}</div>
     <div class="set-row"><b>音效</b><label><input type="radio" name="snd" value="on" ${soundOn() ? 'checked' : ''}>开</label><label><input type="radio" name="snd" value="off" ${!soundOn() ? 'checked' : ''}>关</label></div>
+    <div class="set-row"><b>自动摇骰</b><label><input type="radio" name="ar" value="on" ${meta.settings.autoRoll ? 'checked' : ''}>开</label><label><input type="radio" name="ar" value="off" ${!meta.settings.autoRoll ? 'checked' : ''}>关</label></div>
     <div class="set-row"><b>自动速度</b>${[1, 2, 4].map((s) => `<label><input type="radio" name="s" value="${s}" ${meta.settings.speed === s ? 'checked' : ''}>${s}×</label>`).join('')}</div>
     <p class="muted">自动模式替你掷骰选格、打理产业和天机格；抉择、遗迹、引子与故人、出征准备、劫气积聚的岁首和气血不足时会停下来等你。战斗：WASD / 方向键移动，触屏拖动；Q 收剑（不杀生），P 暂停。</p>
     <div class="row"><button class="btn danger" data-reset>清空存档</button><button class="btn primary" data-ok>好</button></div>`, 'mid');
   box.querySelectorAll<HTMLInputElement>('input[name=t]').forEach((r) => (r.onchange = () => { meta.settings.tendency = r.value as Tendency; saveMeta(meta); }));
   box.querySelectorAll<HTMLInputElement>('input[name=s]').forEach((r) => (r.onchange = () => { meta.settings.speed = Number(r.value); saveMeta(meta); }));
+  box.querySelectorAll<HTMLInputElement>('input[name=ar]').forEach((r) => (r.onchange = () => { meta.settings.autoRoll = r.value === 'on'; saveMeta(meta); }));
   box.querySelectorAll<HTMLInputElement>('input[name=snd]').forEach((r) => (r.onchange = () => setSound(r.value === 'on')));
   (box.querySelector('[data-ok]') as HTMLButtonElement).onclick = closeModal;
   (box.querySelector('[data-reset]') as HTMLButtonElement).onclick = () => {
@@ -1048,23 +1330,75 @@ async function offerPreset() {
   }
 }
 
-document.querySelectorAll<HTMLButtonElement>('[data-open]').forEach((b) => {
-  b.onclick = () => {
-    if (battleEl.classList.contains('show')) return;
-    // 行囊是独立浮层，弹窗开着也能看
-    if (b.dataset.open === 'bag') {
-      if (game?.L) openBag(game.L, refresh);
-      return;
-    }
-    // 经历图谱也是独立浮层：结算时也能复盘
-    if (b.dataset.open === 'trail') return showTrail();
-    // 存档也是独立浮层：随时能存读
-    if (b.dataset.open === 'saves') return showSaves();
-    if (modalEl.classList.contains('show')) return;
-    if (b.dataset.open === 'panel') return togglePanel();
-    togglePanel(false);
-    ({ book: showBook, lamps: showLamps, past: showPast, trail: showTrail, settings: showSettings })[b.dataset.open as 'book']();
+// ---------------- 顶栏按钮 / 手机底部页签 ----------------
+type Section = 'main' | 'panel' | 'bag' | 'book' | 'lamps' | 'trail' | 'past' | 'saves' | 'settings' | 'log' | 'more';
+let logOpen = false;
+function setLog(on: boolean) {
+  logOpen = on;
+  document.body.classList.toggle('m-log', on);
+  if (on) scrollEl.scrollTop = scrollEl.scrollHeight;
+}
+function closeMore() {
+  document.querySelector('.more-root')?.remove();
+}
+// 更多：天书、命灯、图谱、前世书、存档、设置
+function showMore() {
+  if (document.querySelector('.more-root')) return closeMore();
+  const items: [Section, string, string][] = [['book', '书', '天书'], ['lamps', '灯', '命灯'], ['trail', '谱', '经历图谱'], ['past', '世', '前世书'], ['saves', '档', '存档'], ['settings', '设', '设置']];
+  const root = document.createElement('div');
+  root.className = 'more-root';
+  root.innerHTML = `<div class="more-mask"></div><div class="more-sheet" role="menu">${items.map(([k, ch, name]) => `<button class="more-item" data-sec="${k}" role="menuitem"><b>${ch}</b><span>${name}</span></button>`).join('')}</div>`;
+  document.body.appendChild(root);
+  root.querySelector<HTMLElement>('.more-mask')!.onclick = () => {
+    closeMore();
+    syncTabs();
   };
+  root.querySelectorAll<HTMLButtonElement>('[data-sec]').forEach((b) => (b.onclick = () => {
+    closeMore();
+    openSection(b.dataset.sec as Section);
+  }));
+}
+function syncTabs() {
+  const cur = document.querySelector('.more-root') ? 'more' : logOpen ? 'log' : panelEl.classList.contains('open') ? 'panel' : 'main';
+  document.querySelectorAll<HTMLElement>('.mtab').forEach((t) => t.classList.toggle('on', t.dataset.open === cur));
+}
+function openSection(name: Section) {
+  if (battleEl.classList.contains('show')) return;
+  if (name !== 'more') closeMore();
+  if (name !== 'log' && name !== 'trail') setLog(false);
+  // 行囊、经历图谱、存档是独立浮层：弹窗开着也能看
+  if (name === 'bag') {
+    if (game?.L) openBag(game.L, refresh);
+  } else if (name === 'trail') showTrail();
+  else if (name === 'saves') showSaves();
+  else if (name === 'main') togglePanel(false);
+  else if (name === 'log') {
+    togglePanel(false);
+    setLog(!logOpen);
+  } else if (name === 'more') {
+    togglePanel(false);
+    showMore();
+  } else if (name === 'panel') {
+    // 手机上角色抽屉压在事件卡上面，看完收起接着选
+    if (modalEl.classList.contains('show') && !mobileUI.matches) return;
+    togglePanel();
+  } else {
+    if (modalEl.classList.contains('show')) {
+      flash('先把眼前这件事定下来');
+      return syncTabs();
+    }
+    togglePanel(false);
+    ({ book: showBook, lamps: showLamps, past: showPast, settings: showSettings })[name]();
+  }
+  syncTabs();
+}
+document.querySelectorAll<HTMLButtonElement>('[data-open]').forEach((b) => (b.onclick = () => openSection(b.dataset.open as Section)));
+mobileUI.addEventListener('change', () => {
+  if (!mobileUI.matches) {
+    setLog(false);
+    closeMore();
+    syncTabs();
+  }
 });
 
 // ---------------- 启动 ----------------
