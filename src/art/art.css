@@ -1390,6 +1390,14 @@ body {
 .tile.k-dust .t-icon {
   color: var(--red);
 }
+/* 因果链的「缘」格 */
+.tile.k-chain {
+  border: 1px solid rgba(47, 110, 92, 0.75);
+  background: linear-gradient(0deg, rgba(47, 110, 92, 0.16), rgba(47, 110, 92, 0)), var(--paper-tex), #f8fbfc;
+}
+.tile.k-chain .t-icon {
+  color: #2f6e5c;
+}
 /* 状态 */
 .tile.visited {
   opacity: 0.5;

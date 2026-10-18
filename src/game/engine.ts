@@ -11,7 +11,7 @@ import type { Acquaintance, BattleKind, Card, CardTag, Effect, LifeState, LogEnt
 const BEAT_NAMES = ['起', '转', '结'];
 // 普通事件池里的身世抉择（只经「引」卡出现的除外）
 const POOL_IDENTITY = IDENTITY_CHOICES.filter((e) => !e.hookOnly && e.options && e.options.length);
-const ALL_CHOICES: LifeEvent[] = [...CHOICES, ...POOL_IDENTITY];
+const ALL_CHOICES: LifeEvent[] = [...CHOICES, ...POOL_IDENTITY, ...NEW_ENCOUNTERS, ...CHAIN_STARTS, NEMESIS_EVENT];
 const ALL_FLAVORS: LifeEvent[] = [...FLAVORS, ...FLAVORS_MORE];
 const ALL_NOTHING_MORTAL = [...NOTHING_MORTAL, ...NOTHING_MORTAL_MORE];
 const ALL_NOTHING_CULT = [...NOTHING_CULT, ...NOTHING_CULT_MORE];
@@ -21,6 +21,7 @@ import { RollAction, RollView, boardLap, recordLegacies } from './board';
 import { UNLOCKS, WHEEL, hasPage, lampOf, saveLife, saveMeta, wheelPrice } from './meta';
 import { afterBattleCult, applyIdentity, autoEquip, checkAchievements, drawIdentity, ensureCult, giveQi, grantFujue, grantItem, layerCap, layerUp, learnGong, loadoutSpec, metaCult, resolvePending, rotateShop, settleBook, shopItems, startKit, upgradeGrade } from './cult';
 import { estDps } from '../battle/sim';
+import { CHAIN_STARTS, NEMESIS_EVENT, flagEnemyMul, NEW_ENCOUNTERS, addEcho, chainOp, clanBirth, freeAllies, gainSum, giveGain, givePet, petRealmUp, rollBonus } from './chains';
 import { ACHIEVEMENTS, GONGFA, IDENTITY_BY_ID, ITEMS, LAYER_NAMES, TIER_NAMES } from '../data/cult';
 
 export interface PromptOption {
@@ -64,6 +65,7 @@ export class Game {
   M: MetaState;
   io: IO;
   sim = false;
+  curChain: string | null = null; // 正在走的因果链（链拍里的效果默认作用于它）
   private snapshot: string | null = null;
   prevSnapshot: string | null = null;
   battleSinceSnap = false;
@@ -240,6 +242,7 @@ export class Game {
     L.attrs = attrs;
     const nb = M.nextBonus ?? {};
     if (nb.fam) L.attrs.fam = Math.min(12, L.attrs.fam + nb.fam);
+    clanBirth(this); // 前世立的家族：20% 投生本族
     // 轮回身份：按档位权重随机（家境与轮回碑加成）
     const idf = drawIdentity(this);
     L.origin = idf.origin ?? originOf(L.attrs.fam, this.tflag('orphan'));
@@ -804,6 +807,7 @@ export class Game {
     if (L.hook && !L.hook.outcome && L.hook.beat === 1) L.hook.due = Math.min(L.hook.due, L.age);
     L.maxHp = this.calcMaxHp();
     L.hp = L.maxHp;
+    petRealmUp(this);
     const name = REALMS[L.realm].name;
     this.log(`渡劫成功，突破${name}！寿元大增。`, 'milestone');
     if (L.realm === 2 && !L.daoji) await this.castDaoji();
@@ -978,7 +982,7 @@ export class Game {
     if (fe.length && chance(0.5)) return { id: '', ev: pick(fe) };
     if (loc === 'bazaar' && L.marketCd === 0 && L.stones >= 40 && chance(0.6)) return { id: 'market' };
     const ok = (e: LifeEvent) => e.locs.includes(loc) && (e.repeat || !L.choicesDone.includes(e.id)) && (!e.when || e.when(L, this.M));
-    const choices = ALL_CHOICES.filter((e) => e.locs.includes(loc) && !L.choicesDone.includes(e.id) && (!e.when || e.when(L, this.M)));
+    const choices = ALL_CHOICES.filter((e) => (e.locs.includes(loc) || (e.anyLoc && def.stage === (L.inDao ? 'cult' : 'mortal'))) && !L.choicesDone.includes(e.id) && (!e.when || e.when(L, this.M)));
     const enc = ENCOUNTERS.filter(ok);
     const flav = ALL_FLAVORS.filter((e) => e.kind !== 'fatal' && ok(e));
     // 同一世少重复：见过的流水与奇遇权重递减
@@ -989,7 +993,8 @@ export class Game {
     const isChance = c.tag === '缘' || loc === 'fortune' || loc === 'karma' || loc === 'rift';
     if (isChance && enc.length && chance(0.75)) return { id: '', ev: weighted(enc, seenW)! };
     const pc = (isChance ? 0.8 : 0.55) * (fresh.length ? 1 : 0.3);
-    if (choices.length && chance(pc)) return { id: '', ev: pick(fresh.length ? fresh : choices) };
+    // 原有抉择权重 2，扩充的奇遇 1，链的起拍 1.5（宿敌 3）：扩充之后老抉择也还常见
+    if (choices.length && chance(pc)) return { id: '', ev: weighted(fresh.length ? fresh : choices, (e) => e.weight ?? (e.sort ? 1 : 2))! };
     if (enc.length && chance(0.3)) return { id: '', ev: weighted(enc, seenW)! };
     if (flav.length) return { id: '', ev: weighted(flav, seenW)! };
     return null;
@@ -1035,7 +1040,7 @@ export class Game {
     if (c.loc === 'demon') this.trace('ink_touched');
     if (c.loc === 'rift') this.trace('rift');
     if (c.loc === 'fair') this.fairBonus += 1;
-    if (c.loc === 'cave' && L.inDao) L.xp += this.need() * 0.03;
+    if (c.loc === 'cave' && L.inDao) L.xp += this.need() * (0.03 + gainSum(L, 'xp') * 0.1 + (L.pet?.kind === 'lynx' ? 0.01 : 0));
     if (c.loc === 'home' && !L.inDao) L.stones += Math.max(1, Math.floor(L.attrs.fam / 2));
     if (c.loc === 'trace') L.flags.extraCall = 1;
     // 被困住时，去机缘、因果处寻转机
@@ -1128,7 +1133,7 @@ export class Game {
     }
     if (e.eff) await this.apply(e.eff, loc, fought);
     const opts = e.options.filter((o) => !o.when || o.when(L, this.M));
-    const i = await this.ask(title ?? LOC_BY_ID[loc]?.name ?? '抉择', e.text, opts.map((o) => (o.desc ? `${o.label}｜${o.desc}` : o.label)), 'event', false, e.id);
+    const i = await this.ask(title ?? e.title ?? LOC_BY_ID[loc]?.name ?? '抉择', e.text, opts.map((o) => (o.desc ? `${o.label}｜${o.desc}` : o.label)), 'event', false, e.id);
     const o = opts[i];
     this.log(`${e.text}你选择了「${o.label}」。`, 'normal', { loc });
     await this.applyOption(o, loc, fought);
@@ -1139,7 +1144,7 @@ export class Game {
     if (o.eff) await this.apply(o.eff, loc, fought);
     if (this.dead()) return;
     if (o.roll) {
-      const v = L.attrs[o.roll.attr];
+      const v = L.attrs[o.roll.attr] + rollBonus(L, o.roll.attr);
       const p = Math.max(0.1, Math.min(0.95, 0.5 + (v - o.roll.dc) * 0.12));
       const ok = chance(p);
       this.log(`（${ATTR_NAMES[o.roll.attr]}判定${ok ? '成功' : '失败'}）`);
@@ -1159,7 +1164,15 @@ export class Game {
       L.xp = Math.max(0, L.xp + this.need() * e.xpPct / 100);
       if (this.capped()) L.xp = Math.min(L.xp, this.need());
     }
-    if (e.life) L.lifeBonus += e.life;
+    if (e.life) {
+      // 事件加的寿元有个总上限，免得卡在某个境界时靠灵芝之类一直续命（约为本境寿元的三成）
+      if (e.life > 0) {
+        const cap = 60 + 0.3 * REALMS[Math.max(1, L.realm)].lifeBase;
+        const add = Math.max(0, Math.min(e.life, cap - (L.flags.lifeGot ?? 0)));
+        L.flags.lifeGot = (L.flags.lifeGot ?? 0) + add;
+        L.lifeBonus += add;
+      } else L.lifeBonus += e.life;
+    }
     if (e.age) L.age += e.age;
     if (e.school) for (const [k, v] of Object.entries(e.school)) L.school[k as School] += v as number;
     if (e.trace) this.trace(e.trace);
@@ -1210,9 +1223,41 @@ export class Game {
     if (e.inspire) L.inspire = Math.max(0, L.inspire + e.inspire);
     if (e.disciple) L.disciples = Math.min(3, L.disciples + e.disciple);
     if (e.partner) {
-      L.partner = true;
-      this.log('你们结为道侣。', 'milestone');
-      this.highlight('结为道侣', 50, 'partner');
+      if (L.partner && typeof e.partner === 'string' && L.partnerName && L.partnerName !== e.partner) {
+        this.log(`你已有道侣${L.partnerName}，这段缘只能放下。`);
+      } else {
+        const first = !L.partner;
+        L.partner = true;
+        if (typeof e.partner === 'string') L.partnerName = e.partner;
+        if (first) {
+          this.log(`你${L.partnerName ? `与${L.partnerName}` : '们'}结为道侣。`, 'milestone');
+          this.highlight(L.partnerName ? `与${L.partnerName}结为道侣` : '结为道侣', 50, 'partner');
+        }
+      }
+    }
+    // 事件库扩充：因果链、灵宠、其它收获
+    if (e.chain) await chainOp(this, e.chain);
+    if (e.pet) givePet(this, e.pet);
+    if (e.gain) giveGain(this, e.gain);
+    if (e.qi) {
+      if (L.inDao) giveQi(this, e.qi.skill, e.qi.grade);
+      else L.flags['pendQi_' + e.qi.skill] = Math.max(L.flags['pendQi_' + e.qi.skill] ?? 0, e.qi.grade + 1);
+    }
+    if (e.echo) addEcho(this, e.echo);
+    if (e.flag === 'inkCleansed' || e.flag === 'inkWiped') L.traces = L.traces.filter((t) => t.tag !== 'ink_touched');
+    if (e.acqResolve) {
+      // 事件里了结一位故人（优先「诺」）
+      const open = (this.M.acquaintances ?? []).filter((a) => !a.resolved && a.life < L.lifeNo);
+      const a = open.find((x) => x.relation === 'vow') ?? open[0];
+      if (a) {
+        a.resolved = true;
+        (L.acqResolved ??= []).push({ id: a.id, relation: a.relation, earlier: false });
+        this.log(`与${a.name}的这段${RELATION_NAMES[a.relation]}，了了。`, 'fate');
+      }
+    }
+    if (e.flag === 'nemesisWin' && this.M.nemesis) {
+      this.M.nemesis.wins += 1;
+      this.M.nemesis.life = this.M.lives;
     }
     if (e.hebo) this.M.hebo += e.hebo;
     if (e.kill) L.kills += 1;
@@ -1262,7 +1307,17 @@ export class Game {
       L.hook = { id: e.giveHook, beat: 0, due: L.age + 1, deferred: 0 };
       this.log(`本世引子：「${HOOK_BY_ID[e.giveHook].name}」`, 'fate');
     }
-    if (e.die) return this.die(e.die, loc);
+    if (e.die) {
+      // 护命（阴司令牌之类）：本世第一次因事件致死时活下来
+      const ward = (L.gains ?? []).find((x) => x.ward);
+      if (ward && !L.flags.wardUsed) {
+        L.flags.wardUsed = 1;
+        this.log(`「${ward.name}」替你挡了这一回：你本该${e.die}。`, 'fate');
+        L.injuries += 1;
+        return;
+      }
+      return this.die(e.die, loc);
+    }
     if (e.battle) {
       const b = e.battle;
       let win: boolean | null;
@@ -1531,6 +1586,13 @@ export class Game {
         { label: `续命丹（灵石 60）`, desc: '寿元 +10', cost: 60, score: 0.5, fn: () => { L.lifeBonus += 10; } },
         { label: `破境丹（灵石 80）`, desc: '修为 +15%', cost: 80, score: 1, fn: () => { L.xp += this.need() * 0.15; } },
       ];
+      // 商会：坊市价格常驻打折
+      const disc = 1 - Math.min(0.4, gainSum(L, 'price'));
+      if (disc < 1) for (const it of items) {
+        const c = Math.max(1, Math.round(it.cost * disc));
+        it.label = it.label.replace(`灵石 ${it.cost}`, `灵石 ${c}`);
+        it.cost = c;
+      }
       const shown = items.map((it, k) => ({ it, k })).filter((x) => !(x.it.once && bought.has(x.k)));
       const opts = shown.map(({ it }) => ({ label: it.label, desc: it.desc, disabled: L.stones < it.cost }));
       // 自动：挑最想要且买得起、买完还留点底的那件
@@ -1614,7 +1676,7 @@ export class Game {
     if (foxMet && (L.flags.foxPartner || this.lamp('fox') >= 2) && ok('fox')) out.push({ id: 'fox', name: '白狐', lamp: this.lamp('fox') });
     if (L.flags.chiyiAlly && ok('chiyi')) out.push({ id: 'chiyi', name: '赤衣', lamp: this.lamp('chiyi') });
     if (L.flags.danzunPartner) out.push({ id: 'danzun', name: '丹尊残魂', lamp: this.lamp('danzun') });
-    if (L.partner && ok('partner')) out.push({ id: 'partner', name: '道侣', lamp: 2 });
+    if (L.partner && ok('partner')) out.push({ id: 'partner', name: L.partnerName ?? '道侣', lamp: 2 });
     if (this.tflag('cat') && ok('cat')) out.push({ id: 'cat', name: '灵猫', lamp: 2 });
     if (L.disciples > 0 && ok('disciples')) out.push({ id: 'disciples', name: `弟子 ×${L.disciples}`, lamp: 2, count: L.disciples });
     return out;
@@ -1648,6 +1710,7 @@ export class Game {
     if (this.tflag('swordDmg')) dmg += 0.15;
     if (this.tflag('dmg10')) dmg += 0.1;
     if (L.schoolCur) dmg += 0.1;
+    dmg += gainSum(L, 'dmg'); // 随身前辈等
     let crit = 0.05 + L.attrs.luck * 0.005 + (this.tflag('crit') ? 0.08 : 0);
     return {
       maxHp: L.maxHp,
@@ -1658,7 +1721,8 @@ export class Game {
       armor: this.tflag('armor') ? 0.1 : 0,
       regen: this.tflag('regen'),
       lifesteal: this.tflag('lifesteal'),
-      phoenix: (this.tflag('phoenix') || L.legend === 'L08') && !L.phoenixUsed,
+      // 守则纸：每场第一次致命伤无效
+      phoenix: ((this.tflag('phoenix') || L.legend === 'L08') && !L.phoenixUsed) || (L.gains ?? []).some((x) => x.id === 'rules'),
     };
   }
 
@@ -1714,6 +1778,10 @@ export class Game {
       formation = true;
       this.log('山里的狼妖认得你的气味，妖潮比往常稀了些。', 'battle');
     }
+    // 灵宠、鬼伴、化身这类伙伴不必请援，自己跟着上（天劫除外）
+    if (!o.tutorial && !isTrial) {
+      for (const a of freeAllies(L)) if ((L.injuredUntil[a.id] ?? -1) < L.age && !partners.some((p) => p.name === a.name)) partners.push(a);
+    }
     if (mutators.length) this.log(`战场词条：${mutators.map((m) => m.name).join('、')}`, 'battle');
     const foxGuard = this.lamp('fox') >= 5 && !L.flags.foxDead && !L.flags.foxAway && L.inDao;
     if (!L.firstRealmBattle.includes(realm) && !o.tutorial) L.firstRealmBattle.push(realm);
@@ -1725,17 +1793,19 @@ export class Game {
       realm,
       duration: o.tutorial ? 25 : 30 + realm * 5,
       elites: o.elites ?? (o.kind === 'duel' ? 2 + (realm >= 4 ? 1 : 0) : 0),
-      strikes: REALMS[realm].strikes || 3,
+      strikes: Math.max(1, (REALMS[realm].strikes || 3) - (isTrial && L.flags.trialEase ? 1 : 0)),
       mutators,
       partners,
       foxGuard,
       skills: L.skills.map((s) => ({ ...s })),
       ...loadoutSpec(this),
+      // 神位：前世受过香火，劫难里的敌人弱一些（每座 -5%，至多 -15%）
+      enemyMul: loadoutSpec(this).enemyMul! * (1 - Math.min(0.15, 0.05 * (this.M.shrines?.length ?? 0))) * flagEnemyMul(L, o.loc),
       player: { ...this.playerStats(), dmgMul: this.playerStats().dmgMul * BATTLE_POWER },
       formation,
       boss,
       heartDemon: isTrial && realm === 4,
-      heartMod: (L.flags.heartUp ? 1 : 0) - (L.flags.heartDown ? 1 : 0) - ((L.bag ?? []).some((t) => t.key === 'qingxin' && L.load?.passive.includes(t.uid)) ? 1 : 0),
+      heartMod: (L.flags.heartUp ? 1 : 0) + (L.flags.heartDemonHard ? 1 : 0) - (L.flags.heartDown ? 1 : 0) - ((L.bag ?? []).some((t) => t.key === 'qingxin' && L.load?.passive.includes(t.uid)) ? 1 : 0),
       scholar: mutators.some((m) => m.id === 'M21'),
       ascetic: mutators.some((m) => m.id === 'M24'),
       reward,
@@ -1751,6 +1821,7 @@ export class Game {
   afterBattle(o: { kind: BattleKind; title: string; loc: string; boss?: Boss; mode?: 'ask' | 'free' }, spec: BattleSpec, res: BattleResult) {
     const L = this.L;
     L.kills += res.kills;
+    if (spec.kind === 'trial') delete L.flags.trialEase;
     const cultLines = afterBattleCult(this, spec, res, !!o.boss);
     if (cultLines.length) this.log(cultLines.join('；') + '。', 'battle');
     if (o.title === '宗门大比' && res.win) L.flags.tourneyWin = 1;

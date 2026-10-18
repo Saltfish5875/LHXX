@@ -558,6 +558,14 @@ export function startKit(g: Game) {
       g.log(`你带着出身里的${GF_GRADES[grade]}${GONGFA[id].name}入道。`);
     }
   }
+  // 凡人期事件给的法器，入道时落袋
+  for (const k of Object.keys(L.flags)) {
+    if (!k.startsWith('pendQi_')) continue;
+    const id = k.slice(7) as SkillId;
+    const grade = L.flags[k] - 1;
+    delete L.flags[k];
+    giveQi(g, id, grade);
+  }
   if (L.flags.startQi) {
     const grade = L.flags.startQi;
     delete L.flags.startQi;

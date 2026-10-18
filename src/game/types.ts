@@ -51,7 +51,7 @@ export interface Effect {
   removeGrudge?: boolean;
   inspire?: number;
   disciple?: number;
-  partner?: boolean; // 结为道侣
+  partner?: boolean | string; // 结为道侣（字符串 = 道侣的称呼）
   hebo?: number;
   kill?: boolean;
   nextLoc?: string;
@@ -78,6 +78,12 @@ export interface Effect {
   insight?: number; // 结算时额外宿慧
   bond?: 'fox' | 'chiyi' | 'danzun' | 'bottle'; // 同行者本世进度 +1
   next?: { fam?: number; fortune?: number; reroll?: number; rerollOnce?: number; chooseHook?: boolean; regretKeep?: number }; // 影响下一世
+  // 事件库扩充：因果链与新收获
+  chain?: ChainOp; // 因果链：开链、缘分、标记、断链
+  pet?: { kind: PetKind; adult?: boolean; name?: string }; // 得灵宠（一世一只；adult = 链上档成体）
+  gain?: Gain; // 其它收获：随身前辈、化身、洞天、商会、家族……
+  qi?: { skill: SkillId; grade: number }; // 得一件功法型法宝（grade 0 凡 1 法 2 灵 3 宝 4 仙）
+  echo?: { text: string; eff?: Effect; laps?: number }; // 余波：几圈后兑现一次
   // 命途分岔
   fate?: {
     breakVow?: Vow; // 破戒：道心蒙尘，修为停滞
@@ -91,6 +97,45 @@ export interface Effect {
   };
 }
 export type Vow = 'love' | 'kill';
+
+// ================= 事件库扩充 =================
+// 灵宠图鉴（内容库「事件库扩充」第二节）
+export type PetKind =
+  | 'fox' | 'lynx' | 'crane' | 'crow' | 'jiao' | 'chi' | 'rat' | 'horse' | 'tiger' | 'gu'
+  | 'eagle' | 'turtle' | 'paper' | 'dog' | 'clay' | 'parrot' | 'carp' | 'peng' | 'snake';
+export interface ChainOp {
+  id?: string; // 省略 = 当前这条链
+  op?: 'start' | 'skip' | 'break'; // start 从第一拍后开链；skip 直接到第二拍（缘分按 1 起）；break 断链
+  yuan?: number; // 缘分增减（玩家看不到）
+  mark?: string; // 记一个链内标记（可重复记，计次数）
+  unmark?: string; // 去掉一个链内标记
+}
+// 其它收获：一世有效，除非写了 meta（跨世）
+export interface Gain {
+  id: string; // elder 随身前辈 / clone 化身 / ghost 鬼伴 / ally 伙伴 / dongtian 洞天 / guild 商会 / ward 护命 / clan 家族 / shrine 神位 / nemesis 宿敌 / keep 纪念品……
+  name: string; // 显示名，如「剑鬼」「首徒」「残破洞天」
+  desc?: string; // 一句话说明，显示在角色面板
+  lv?: number;
+  ally?: boolean; // 参战伙伴（不必请援，至多两位）
+  dmg?: number; // 战斗伤害 +x（0.1 = +10%）
+  roll?: number; // 判定 +n（按属性值加）
+  xp?: number; // 闭关、停洞府、岁首修为 +x（0.15 = +15%）
+  price?: number; // 坊市价格 -x（0.2 = -20%）
+  lap?: Effect; // 每个岁首自动给的东西（如每圈灵石 +5）
+  ward?: boolean; // 护命：本世第一次因事件致死时活下来
+  meta?: 'clan' | 'shrine' | 'nemesis' | 'signin'; // 跨世：家族 / 神位 / 宿敌 / 签到碑
+}
+export interface ChainState {
+  id: string;
+  beat: number; // 已走完的拍数 1～3（4 = 结束）
+  yuan: number;
+  marks: Record<string, number>;
+  due: number; // 下一个「缘」格最早出现的圈数（board.lap）
+  misses: number; // 「缘」格出现了却没去的次数，2 次断链
+  onBoard?: boolean;
+  slot?: number; // 签到碑：固定在同一格
+  end?: 'top' | 'mid' | 'low' | 'broken';
+}
 
 export interface Roll {
   attr: AttrKey;
@@ -249,6 +294,13 @@ export interface LifeState {
   marketSpent?: number;
   maxStones?: number;
   saves?: number; // 本世被救回的致命伤次数
+  // 事件库扩充
+  chains?: ChainState[];
+  pet?: { kind: PetKind; lv: number; adult: boolean; name: string } | null;
+  gains?: Gain[];
+  partnerName?: string;
+  echoes?: { text: string; eff?: Effect; due: number }[];
+  nudgeLap?: number; // 龙驹：这一圈已拨过点数
 }
 
 export interface BookEntry {
@@ -266,14 +318,14 @@ export interface CultMeta {
 }
 
 // ================= 命途棋盘 =================
-export type TileKind = 'start' | 'fate' | 'market' | 'oracle' | 'hold' | 'loc' | 'conseq' | 'stray' | 'dust' | 'ruin';
+export type TileKind = 'start' | 'fate' | 'market' | 'oracle' | 'hold' | 'loc' | 'conseq' | 'stray' | 'dust' | 'ruin' | 'chain';
 export interface Tile {
   slot: number;
   kind: TileKind;
   loc?: string; // 地点格、引、故：地点 id
   tag?: CardTag; // 流年签标记
   ttl: number; // 剩余存续圈数（固定格为 99）
-  ref?: string; // 后果格标签 / 歧路格 id / 遗泽 id / 故人 id
+  ref?: string; // 后果格标签 / 歧路格 id / 遗泽 id / 故人 id / 因果链 id
   peeked?: string;
 }
 export interface BoardState {
@@ -363,5 +415,11 @@ export interface MetaState {
   fates?: string[]; // 见过的命格
   legacies?: Legacy[]; // 前世产业留下的遗迹
   cult?: CultMeta;
+  // 事件库扩充：跨世的收获
+  clan?: { name: string; life: number } | null;
+  shrines?: { name: string; life: number }[];
+  nemesis?: { name: string; wins: number; life: number } | null;
+  signin?: number; // 下一世签到碑从几起
+  chainsDone?: string[]; // 走到上档过的链
   settings: { tendency: Tendency; speed: number; autoRoll?: boolean };
 }

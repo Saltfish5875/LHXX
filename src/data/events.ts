@@ -53,6 +53,9 @@ export interface LifeEvent {
   weight?: number;
   repeat?: boolean; // 默认抉择每世一次
   fatal?: { chance: number; cause: string };
+  sort?: '即时' | '余波' | '直得'; // 事件库扩充的即时奇遇类型
+  anyLoc?: boolean; // 任意地点都可能抽到（因果链起拍写了「任意」）
+  title?: string; // 弹窗标题，默认用地点名
 }
 
 const ev = (e: LifeEvent) => e;

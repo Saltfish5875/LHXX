@@ -1,7 +1,7 @@
 // 无界面跑完整人生：用真实的人生引擎与战斗逻辑（自动驾驶）批量模拟，输出 R12 验证指标
 // 用法：npm run sim -- [世数=40] [倾向=safe|chance|war|all] [种子=1]
 import { Game, IO, Prompt } from '../src/game/engine';
-import { RollAction, RollView, autoAgain, autoDie } from '../src/game/board';
+import { RollAction, RollView, autoAgain, autoDie, autoNudge } from '../src/game/board';
 import { newMeta } from '../src/game/meta';
 import { autoBattle } from '../src/battle/sim';
 import { setSeed, rand } from '../src/game/rng';
@@ -11,6 +11,9 @@ import type { BattleSpec } from '../src/battle/spec';
 import { FATE_BY_ID, NOTHING_CULT_MORE, NOTHING_MORTAL_MORE } from '../src/data/fate';
 import { NOTHING_CULT, NOTHING_MORTAL } from '../src/data/events';
 import { dizhun } from '../src/game/cult';
+import { NEW_ENCOUNTERS } from '../src/game/chains';
+
+const NEW_IDS = new Set(NEW_ENCOUNTERS.map((e) => e.id));
 
 const NOTHING = new Set([...NOTHING_MORTAL, ...NOTHING_MORTAL_MORE, ...NOTHING_CULT, ...NOTHING_CULT_MORE]);
 
@@ -23,6 +26,8 @@ const TEND = (args[1] ?? 'all') as Tendency | 'all';
 const SEED = Number(args[2] ?? 1);
 
 interface Stats {
+  breaks: Record<string, number>;
+  chain?: { started: number; top: number; mid: number; low: number; broken: number; pet: number; partner: number; gains: number; newEv: number; lives: number };
   agains?: number;
   againLeft?: number;
   decisions: number;
@@ -75,7 +80,7 @@ async function run(tend: Tendency): Promise<Stats> {
   setSeed(SEED * 1000 + tend.length);
   const meta = newMeta();
   meta.settings.tendency = tend;
-  const st: Stats = { decisions: 0, rounds: 0, nothing: 0, battles: 0, battlesWon: 0, deaths: {}, ages: [], realms: [], pagesByLife: [], firstRepeatLife: null, wishes: 0, wishesDone: 0, endings: [], errors: 0, trials: {}, cardsTotal: 0, cardsFace: 0, hookLives: 0, hookDone: 0, reunions: 0, acqResolved: 0, eras: {}, eraRepeat: 0, fates: {}, mismatch: 0, blocked: 0, blockedBy: {}, recovered: 0, retired: 0, choicesSeen: 0, choicesRepeat: 0, flavorTotal: 0, flavorDistinct: 0, trialBattles: 0, laps: 0, stops: 0, kinds: {}, holdLives: 0, holdMax: [0, 0, 0, 0, 0, 0], ruinVisits: 0, dice: [0, 0, 0, 0], laps0: 0, btitles: {}, cult: { gong: 0, layer: 0, qi: 0, fj: 0, items: 0, xinde: 0, tiers: [0, 0, 0, 0], dao: 0 } };
+  const st: Stats = { breaks: {}, decisions: 0, rounds: 0, nothing: 0, battles: 0, battlesWon: 0, deaths: {}, ages: [], realms: [], pagesByLife: [], firstRepeatLife: null, wishes: 0, wishesDone: 0, endings: [], errors: 0, trials: {}, cardsTotal: 0, cardsFace: 0, hookLives: 0, hookDone: 0, reunions: 0, acqResolved: 0, eras: {}, eraRepeat: 0, fates: {}, mismatch: 0, blocked: 0, blockedBy: {}, recovered: 0, retired: 0, choicesSeen: 0, choicesRepeat: 0, flavorTotal: 0, flavorDistinct: 0, trialBattles: 0, laps: 0, stops: 0, kinds: {}, holdLives: 0, holdMax: [0, 0, 0, 0, 0, 0], ruinVisits: 0, dice: [0, 0, 0, 0], laps0: 0, btitles: {}, cult: { gong: 0, layer: 0, qi: 0, fj: 0, items: 0, xinde: 0, tiers: [0, 0, 0, 0], dao: 0 } };
   let prevChoices = new Set<string>();
   let curChoices = new Set<string>();
   let lifeLogs: string[] = [];
@@ -119,6 +124,8 @@ async function run(tend: Tendency): Promise<Stats> {
       const tiles = v.tiles.filter((t) => t.kind === 'loc');
       st.cardsTotal += tiles.length;
       st.cardsFace += tiles.filter((t) => t.tag === '引' || t.tag === '故').length;
+      const nd = autoNudge(v, tend, L);
+      if (nd) return { action: 'nudge', d: nd };
       if (autoAgain(v, tend, L)) {
         st.agains = (st.agains ?? 0) + 1;
         return { action: 'reroll' };
@@ -169,6 +176,8 @@ async function run(tend: Tendency): Promise<Stats> {
       if (DEBUG) console.log("  ", e.text.slice(0, 80));
       if ((e.kind ?? 'normal') === 'normal' && !e.text.includes('你选择了')) lifeLogs.push(e.text);
       if (NOTHING.has(e.text)) st.nothing += 1;
+      const br = e.text.match(/」断了（(.+)）/);
+      if (br) st.breaks[br[1]] = (st.breaks[br[1]] ?? 0) + 1;
       if (e.text.includes('劫气拦住')) st.btitles['(拦路)'] = (st.btitles['(拦路)'] ?? 0) + 1;
       if (e.text.startsWith('流年：劫气积聚')) st.btitles['(积聚圈)'] = (st.btitles['(积聚圈)'] ?? 0) + 1;
     },
@@ -213,6 +222,18 @@ async function run(tend: Tendency): Promise<Stats> {
       if (L.flags.turnedOk || (!L.stall && L.cap == null)) st.recovered += 1;
     }
     if (L.retired) st.retired += 1;
+    if (process.env.SIMLIFE) console.log(`  [第${lifeNo}世] 享年 ${L.age} 寿 ${g.lifespan()} 境 ${L.realm} 加寿 ${L.lifeBonus} ${L.deathCause ?? L.ended} 收获 ${(L.gains ?? []).map((x) => x.name).join(',')} 宠 ${L.pet?.name ?? ''}`);
+    if (process.env.SIMMORTAL && !L.inDao) console.log(`  [凡人世] 享年 ${L.age} ${L.deathCause ?? L.ended} 灵根 ${L.root} 婉拒 ${L.flags.declined ?? 0} 链 ${(L.chains ?? []).map((c) => c.id).join(',')}`);
+    const ch = (st.chain ??= { started: 0, top: 0, mid: 0, low: 0, broken: 0, pet: 0, partner: 0, gains: 0, newEv: 0, lives: 0 });
+    ch.lives += L.chains?.length ? 1 : 0;
+    for (const c of L.chains ?? []) {
+      ch.started += 1;
+      if (c.end) ch[c.end] += 1;
+    }
+    if (L.pet) ch.pet += 1;
+    if (L.partner) ch.partner += 1;
+    ch.gains += L.gains?.length ?? 0;
+    ch.newEv += L.choicesDone.filter((id) => NEW_IDS.has(id)).length;
     st.flavorTotal += lifeLogs.length;
     st.flavorDistinct += new Set(lifeLogs).size;
     if (L.hook) st.hookLives += 1;
@@ -267,6 +288,8 @@ function report(tend: Tendency, st: Stats, meta: ReturnType<typeof newMeta>) {
   const c = st.cult;
   const d = Math.max(1, c.dao);
   console.log(`修炼与法宝（入道的世）：功法 ${(c.gong / d).toFixed(1)} 门，最高层 ${(c.layer / d).toFixed(1)}，最好法宝品级 ${(c.qi / d).toFixed(1)}（0 凡 4 仙），附诀 ${(c.fj / d).toFixed(1)}，被动/主动法宝 ${(c.items / d).toFixed(1)}，余心得 ${(c.xinde / d).toFixed(1)}；身份档 凡/富/宗/顶 = ${c.tiers.join('/')}；轮回碑 ${meta.achievements.length}；底蕴 ${dizhun(meta)}`);
+  const ch = st.chain;
+  if (ch) console.log(`因果链：开过链的世 ${((ch.lives / Math.max(1, n)) * 100).toFixed(0)}%，每世开 ${(ch.started / Math.max(1, n)).toFixed(2)} 条；上/中/下/断 = ${ch.top}/${ch.mid}/${ch.low}/${ch.broken}，未走完 ${ch.started - ch.top - ch.mid - ch.low - ch.broken}；有灵宠的世 ${ch.pet}，有道侣的世 ${ch.partner}，每世其它收获 ${(ch.gains / Math.max(1, n)).toFixed(2)} 件；每世见扩充奇遇 ${(ch.newEv / Math.max(1, n)).toFixed(1)} 条；断链原因 ${JSON.stringify(st.breaks)}`);
   if (st.errors) console.log(`!!! 出错 ${st.errors} 次`);
 }
 
