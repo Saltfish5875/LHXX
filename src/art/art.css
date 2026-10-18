@@ -1210,10 +1210,21 @@ body {
 }
 
 /* ================= 命途棋盘：青绿微缩山水 ================= */
-.scroll-wrap:has(.board) { overflow-y: auto; scrollbar-width: thin; }
-.scroll-wrap:has(.board) > .scene { height: clamp(110px, 20dvh, 210px); }
-.scroll-wrap:has(.board) > .scroll { min-height: 76px; }
-.deal:has(.board) { flex-shrink: 0; }
+.scroll-wrap:has(.board) { overflow: hidden; }
+.scroll-wrap:has(.board) > .scene { height: clamp(64px, 10dvh, 100px); }
+.scroll-wrap:has(.board) > .scene .outcome { top: 6px; max-width: min(95%, 600px); gap: 3px; }
+.scroll-wrap:has(.board) > .scene .oc-line { font-size: 14px; line-height: 1.4; padding: 4px 8px; }
+.scroll-wrap:has(.board) > .scene .oc-chip { font-size: 12px; }
+.scroll-wrap:has(.board) > .scroll { min-height: 0; padding: 12px 18px 20px; }
+.scroll-wrap:has(.board) .entry { margin-bottom: 5px; overflow-wrap: anywhere; }
+.deal:has(.board) {
+  flex-shrink: 0;
+  min-height: 0;
+  max-height: 48dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
 .board {
   --k: 4;
   max-width: 820px;
@@ -1223,10 +1234,10 @@ body {
   display: flex;
   align-items: baseline;
   gap: 12px;
-  padding: 0 4px 5px;
+  padding: 0 2px 7px;
   border-bottom: 1px solid rgba(91, 126, 129, .15);
   color: var(--ink-2);
-  font-size: 11px;
+  font-size: 12px;
 }
 .board-heading b {
   font-family: var(--brush);
@@ -1235,7 +1246,8 @@ body {
   color: #3c666e;
   letter-spacing: 2px;
 }
-.board-guide { margin-left: auto; opacity: .8; }
+.board-toggle { margin-left: auto; min-height: 32px; white-space: nowrap; font-size: 12px; }
+.board-viewport[hidden] { display: none; }
 .board-viewport {
   overflow-x: auto;
   overflow-y: hidden;
@@ -1246,7 +1258,7 @@ body {
 .board-map {
   position: relative;
   isolation: isolate;
-  width: min(100%, calc(38dvh * var(--map-ratio)));
+  width: min(100%, 420px);
   aspect-ratio: var(--map-ratio);
   margin: 0 auto;
   container-type: inline-size;
@@ -1397,19 +1409,18 @@ body {
   border-radius: 4px;
 }
 .board-reading { flex: 1; min-width: 0; }
-.board-center .sign { margin: 0 0 4px; font-size: 15px; line-height: 1.35; }
+.board-center .sign { margin: 0 0 4px; font-size: 14px; line-height: 1.5; }
 .board-center .sign > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .board-center .b-info { min-height: 1.35em; }
 .board-center .dice { flex: 0 1 auto; align-items: center; min-height: 52px; }
+.board.choosing .board-center { flex-direction: column; align-items: stretch; }
+.board.choosing .dice { display: grid; width: 100%; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
 .b-info {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--ink-2);
-  line-height: 1.35;
+  line-height: 1.6;
   min-height: 2.7em;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 .b-info b {
   color: var(--ink);
@@ -1636,15 +1647,14 @@ body {
 
 @media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
   .top-actions { flex-shrink: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-  .board-heading { gap: 8px; font-size: 10px; }
+  .board-heading { gap: 8px; font-size: 11px; }
   .board-heading b { font-size: 17px; }
-  .board-guide { font-size: 9px; }
-  .board-map { width: min(100%, calc(40dvh * var(--map-ratio))); }
+  .board-map { width: 100%; }
   .board.s6 .board-map, .board.s7 .board-map { min-width: 390px; }
   .board-center { padding: 8px 4px; gap: 7px; }
-  .board-center .sign { font-size: 12px; }
+  .board-center .sign { font-size: 14px; }
   .board-center .sign::before { width: 18px; height: 18px; line-height: 18px; font-size: 11px; }
-  .board-center .b-info { font-size: 11px; }
+  .board-center .b-info { font-size: 13px; }
   .board-center .dice { min-width: 130px; gap: 6px; }
   .die { --sz: 36px; padding: 5px; }
   .die-btn small { font-size: 10px; max-width: 74px; }
@@ -1656,12 +1666,58 @@ body {
   .again-btn small { font-size: 9px; }
   .t-tag { top: 13%; right: 0; width: 12px; height: 14px; font-size: 10px; line-height: 14px; }
 }
-@media (max-width: 400px) {
-  .board-guide { max-width: 104px; text-align: right; }
-  .board.s4 .board-map, .board.s5 .board-map { width: 100%; }
+/* 宽屏将经历与棋盘并列，两个区域各自滚动，棋盘不再压缩正文高度。 */
+@media (min-width: 981px) and (min-height: 501px) {
+  .layout:has(.board) { grid-template-columns: minmax(0, 1fr) 270px; }
+  .scroll-wrap:has(.board) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(320px, 38%, 420px);
+    grid-template-rows: clamp(90px, 12dvh, 124px) minmax(0, 1fr);
+  }
+  .scroll-wrap:has(.board) > .scene { grid-area: 1 / 1 / 2 / -1; height: auto; min-height: 0; }
+  .scroll-wrap:has(.board) > .scroll { grid-area: 2 / 1 / 3 / 2; }
+  .deal:has(.board) {
+    grid-area: 2 / 2 / 3 / 3;
+    max-height: none;
+    padding: 10px 12px;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+  }
+  .board-heading { gap: 8px; }
+  .board-heading b { font-size: 18px; letter-spacing: 1px; }
+  .board-center { flex-direction: column; align-items: stretch; padding: 10px 4px; gap: 12px; }
+  .board-center .dice { justify-content: center; }
+  .deal:has(.board) .deal-actions { gap: 6px; margin-top: 4px; }
+  .deal:has(.board) .deal-actions .btn { font-size: 12px; padding: 6px 9px; min-height: 34px; }
+  .scroll-wrap:has(.board.collapsed) { grid-template-columns: minmax(0, 1fr); grid-template-rows: clamp(90px, 12dvh, 124px) minmax(0, 1fr) auto; }
+  .scroll-wrap:has(.board.collapsed) > .scroll { grid-area: 2 / 1 / 3 / 2; }
+  .deal:has(.board.collapsed) { grid-area: 3 / 1 / 4 / 2; max-height: 36dvh; border-left: 0; border-top: 1px solid var(--line); }
+  .board.collapsed .board-center { flex-direction: row; align-items: center; }
+  .board.collapsed.choosing .board-center { flex-direction: column; align-items: stretch; }
 }
-@media (max-height: 700px) {
-  .scroll-wrap:has(.board) > .scene { height: 110px; }
+@media (min-width: 761px) and (max-width: 980px) and (min-height: 501px) {
+  .layout:has(.board) { grid-template-rows: minmax(0, 1fr) auto; }
+  .layout:has(.board) > .panel { max-height: 130px; }
+  .deal:has(.board) { max-height: 40dvh; }
+}
+@media (max-height: 600px) {
+  .scroll-wrap:has(.board) > .scene { display: none; }
+  .deal:has(.board) { max-height: 50dvh; }
+  .scroll-wrap:has(.board) { grid-template-rows: minmax(0, 1fr); }
+  .scroll-wrap:has(.board) > .scroll { grid-row: 1; }
+  .scroll-wrap:has(.board) > .deal { grid-row: 1; }
+  .scroll-wrap:has(.board.collapsed) { grid-template-rows: minmax(0, 1fr) auto; }
+  .scroll-wrap:has(.board.collapsed) > .deal { grid-row: 2; }
+}
+@media (max-height: 500px) and (min-width: 640px) and (pointer: coarse) {
+  .scroll-wrap:has(.board), .scroll-wrap:has(.board.collapsed) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 40%);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .scroll-wrap:has(.board) > .mstatus { grid-area: 1 / 1 / 2 / -1; }
+  .scroll-wrap:has(.board) > .scroll { grid-area: 2 / 1 / 3 / 2; }
+  .scroll-wrap:has(.board) > .deal { grid-area: 2 / 2 / 3 / 3; max-height: none; padding: 8px; border-top: 0; border-left: 1px solid var(--line); }
 }
 /* 落子小结果：使用与棋格相同的投影坐标。 */
 .tile-tip {

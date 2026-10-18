@@ -219,6 +219,8 @@ function dieFace(f: number): string {
 }
 const AUTO_KEYS = new Set(['oracle', 'hold', 'build', 'holdBranch', 'retreat', 'trialInsight', 'newGong', 'yujian', 'canye']);
 const BAG_KEYS = new Set(['battlePrep', 'retreat', 'market', 'gongSwap']);
+const compactBoardScreen = matchMedia('(max-width: 980px), (max-height: 500px) and (pointer: coarse)');
+let boardExpanded: boolean | null = null; // 未手动切换时，窄屏默认收起，桌面默认展开
 let lastRollAct: RollAction['action'] | null = null;
 // 上一次落子的格子与结算出来的简略结果（下一次摆盘时冒在那一格上）
 let landed: { life: number; size: number; slot: number; tip?: { chips: Chip[]; caption: string | null } } | null = null;
@@ -275,13 +277,17 @@ async function roll(v: RollView): Promise<RollAction> {
     };
     const render = () => {
       const mapScroll = dealEl.querySelector('.board-viewport')?.scrollLeft ?? 0;
+      const controlsScroll = dealEl.scrollTop;
+      const followLog = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 40;
       const activeTile = document.activeElement?.closest<HTMLButtonElement>('.tile')?.dataset.s;
+      const activeAction = document.activeElement?.closest<HTMLButtonElement>('button[data-a]')?.dataset.a;
+      const expanded = boardExpanded ?? !compactBoardScreen.matches;
       const targets = ruyiMode ? ruyiTargets : rolled ? v.targets : [];
       const info = focus !== null ? v.tiles[focus] : null;
       dealEl.innerHTML = `
-        <div class="board s${k}${v.gathered ? ' gathered' : ''}${peekMode ? ' peeking' : ''}" style="--k:${k};--map-ratio:${geometry.ratio}">
-          <div class="board-heading"><b>命途棋盘</b><span>${esc(v.stageName)} · ${n} 格</span><span class="board-guide">顺时针行进 · 点地块查看</span></div>
-          <div class="board-viewport"><div class="board-map" role="group" aria-label="${esc(v.stageName)}命途棋盘，${n}格，顺时针行进">
+        <div class="board s${k}${expanded ? '' : ' collapsed'}${ruyiMode ? ' choosing' : ''}${v.gathered ? ' gathered' : ''}${peekMode ? ' peeking' : ''}" style="--k:${k};--map-ratio:${geometry.ratio}">
+          <div class="board-heading"><b>命途棋盘</b><span>${esc(v.stageName)} · ${n} 格</span><button class="btn sm board-toggle" data-a="board" aria-expanded="${expanded}" aria-controls="board-map-panel">${expanded ? '收起棋盘' : '展开棋盘'}</button></div>
+          <div class="board-viewport" id="board-map-panel" ${expanded ? '' : 'hidden'}><div class="board-map" role="group" aria-label="${esc(v.stageName)}命途棋盘，${n}格，顺时针行进">
           ${boardBackdrop(n, esc(v.stageName))}
           ${v.tiles
             .map((t) => {
@@ -319,7 +325,7 @@ async function roll(v: RollView): Promise<RollAction> {
                   ? '点一格地点，窥它这一圈会发生什么'
                   : ruyiMode
                     ? '如意骰：任选点数'
-                    : `${v.stageName} · 第 ${v.lap + 1} 圈 · 一圈 ${v.years} 年 · 已停 ${v.stops}/${v.maxStops}`
+                    : `所在：${esc(v.tiles[v.pos].name)} · 第 ${v.lap + 1} 圈 · 一圈 ${v.years} 年 · 已停 ${v.stops}/${v.maxStops}`
             }</div>
             </div><div class="dice">${diceHtml()}</div>
           </div>
@@ -334,7 +340,10 @@ async function roll(v: RollView): Promise<RollAction> {
         </div>`;
       const viewport = dealEl.querySelector('.board-viewport');
       if (viewport) viewport.scrollLeft = mapScroll;
-      if (activeTile !== undefined) dealEl.querySelector<HTMLButtonElement>(`.tile[data-s="${activeTile}"]`)?.focus({ preventScroll: true });
+      dealEl.scrollTop = controlsScroll;
+      if (followLog) scrollEl.scrollTop = scrollEl.scrollHeight;
+      if (activeTile !== undefined && expanded) dealEl.querySelector<HTMLButtonElement>(`.tile[data-s="${activeTile}"]`)?.focus({ preventScroll: true });
+      else if (activeAction !== undefined) dealEl.querySelector<HTMLButtonElement>(`button[data-a="${activeAction}"]`)?.focus({ preventScroll: true });
       dealEl.querySelectorAll<HTMLButtonElement>('.tile').forEach((b) => (b.onclick = () => tapTile(Number(b.dataset.s))));
       dealEl.querySelectorAll<HTMLButtonElement>('.die-btn[data-d]').forEach((b) => (b.onclick = () => go(Number(b.dataset.d))));
       dealEl.querySelectorAll<HTMLButtonElement>('.die-btn[data-r]').forEach((b) => (b.onclick = () => go(-1, Number(b.dataset.r))));
@@ -349,11 +358,16 @@ async function roll(v: RollView): Promise<RollAction> {
         b.onclick = () => {
           const a = b.dataset.a;
           sfx.tap();
-          if (a === 'roll') void tumble();
+          if (a === 'board') {
+            boardExpanded = !expanded;
+            if (!boardExpanded) peekMode = false;
+            render();
+          } else if (a === 'roll') void tumble();
           else if (a === 'reroll') finish({ action: 'reroll' });
           else if (a === 'nudge-' || a === 'nudge+') finish({ action: 'nudge', d: a === 'nudge+' ? 1 : -1 });
           else if (a === 'peek') {
             peekMode = !peekMode;
+            if (peekMode) boardExpanded = true;
             ruyiMode = false;
             render();
           } else if (a === 'ruyi') {
@@ -457,9 +471,12 @@ async function roll(v: RollView): Promise<RollAction> {
       else if (d >= 0 && d < v.dice.length) go(d);
     };
     window.addEventListener('keydown', onKey);
+    const onBoardScreen = () => render();
+    compactBoardScreen.addEventListener('change', onBoardScreen);
     function finish(a: RollAction) {
       if (timer) clearTimeout(timer);
       window.removeEventListener('keydown', onKey);
+      compactBoardScreen.removeEventListener('change', onBoardScreen);
       lastRollAct = a.action;
       dealEl.innerHTML = '';
       resolve(a);
