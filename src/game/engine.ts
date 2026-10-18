@@ -22,6 +22,7 @@ import { UNLOCKS, WHEEL, hasPage, lampOf, saveLife, saveMeta, wheelPrice } from 
 import { afterBattleCult, applyIdentity, autoEquip, checkAchievements, drawIdentity, ensureCult, giveQi, grantFujue, grantItem, layerCap, layerUp, learnGong, loadoutSpec, metaCult, resolvePending, rotateShop, settleBook, shopItems, startKit, upgradeGrade } from './cult';
 import { estDps } from '../battle/sim';
 import { CHAIN_STARTS, NEMESIS_EVENT, flagEnemyMul, NEW_ENCOUNTERS, addEcho, chainOp, clanBirth, freeAllies, gainSum, giveGain, givePet, petRealmUp, rollBonus } from './chains';
+import { trailArchive, trailChip, trailClose, trailHint, trailLine, trailMark, trailOpen, trailPick, trailReset, trailTop } from './trail';
 import { ACHIEVEMENTS, GONGFA, IDENTITY_BY_ID, ITEMS, LAYER_NAMES, TIER_NAMES } from '../data/cult';
 
 export interface PromptOption {
@@ -109,6 +110,7 @@ export class Game {
     const e: LogEntry = { age: this.L.age, text, kind, ...extra };
     this.L.log.push(e);
     this.io.log(e);
+    trailLine(this, text);
   }
   highlight(text: string, score: number, type: string) {
     this.L.log.push({ age: this.L.age, text: '', kind: 'normal', hl: `${cnAge(this.L.age)}岁，${text}`, score, hlType: type });
@@ -143,6 +145,7 @@ export class Game {
     const M = this.M;
     M.lives += 1;
     this.io.clearLog();
+    trailReset(this);
     const L: LifeState = {
       lifeNo: M.lives,
       age: 0,
@@ -316,6 +319,7 @@ export class Game {
       this.log('你出生那夜，砚池边多了一盏新灯。提灯的人还很小，看不见东西，但她在笑。', 'fate');
       L.flags.newLampShown = 1;
     }
+    trailMark(this, { kind: 'birth', title: `出生 · ${L.origin}`, text: `${ERA_BY_ID[L.era].name}。天赋：${talentNames}。命格「${fate.name}」。${L.hook ? `引子「${HOOK_BY_ID[L.hook.id].name}」。` : ''}` });
     this.io.refresh();
     this.takeSnapshot();
   }
@@ -577,6 +581,7 @@ export class Game {
     L.skills = [{ id: 'sword', lvl: 1, grade: 0, bm: true }];
     ensureCult(L);
     this.log('你一岁时便引气入体，练气一层。', 'milestone');
+    trailMark(this, { kind: 'realm', title: '踏上仙途', text: '一岁引气入体' });
     startKit(this);
     L.maxHp = this.calcMaxHp();
     L.hp = L.maxHp;
@@ -605,6 +610,7 @@ export class Game {
     startKit(this);
     autoEquip(L);
     this.highlight('踏上仙途', 40, 'dao');
+    trailMark(this, { kind: 'realm', title: '踏上仙途', text: `${L.route === 'sect' ? '拜入宗门' : '随散修云游'}，本命功法${SKILL_NAMES[bm]}` });
     // 入门试炼
     await this.fight({ kind: 'beast', title: '入门试炼', loc: 'trial0', tutorial: true });
   }
@@ -810,6 +816,7 @@ export class Game {
     petRealmUp(this);
     const name = REALMS[L.realm].name;
     this.log(`渡劫成功，突破${name}！寿元大增。`, 'milestone');
+    trailMark(this, { kind: 'realm', title: `突破${name}` });
     if (L.realm === 2 && !L.daoji) await this.castDaoji();
     this.highlight(`渡${REALMS[L.realm - 1].trial}`, 60 + 10 * L.realm, 'realm');
     if (L.realm === 2) this.gainPage(4);
@@ -1110,6 +1117,16 @@ export class Game {
     const L = this.L;
     const ev = FLAVORS.find((e) => e.kind === 'fatal' && e.locs.includes(loc));
     if (!ev || !ev.fatal) return;
+    const tid = trailOpen(this, { kind: 'flavor', title: `${LOC_BY_ID[loc]?.name ?? ''}遇险`, loc, text: ev.text });
+    try {
+      await this.fatal0(ev, loc);
+    } finally {
+      trailClose(this, tid);
+    }
+  }
+  private async fatal0(ev: LifeEvent, loc: string) {
+    const L = this.L;
+    if (!ev.fatal) return;
     let p = ev.fatal.chance;
     if (loc === 'road' && L.flags.escort) p *= 2;
     if (loc === 'river' && (L.flags.foxRiver || L.origin === '龙族血脉')) p = 0;
@@ -1123,6 +1140,14 @@ export class Game {
 
   // ================= 事件解释器 =================
   async runEvent(e: LifeEvent, loc: string, fought: { v: boolean }, title?: string) {
+    const tid = trailOpen(this, { kind: e.kind === 'flavor' || !e.options ? 'flavor' : 'choice', title: title ?? e.title ?? LOC_BY_ID[loc]?.name ?? '抉择', loc, text: e.text, ev: e });
+    try {
+      await this.runEvent0(e, loc, fought, title);
+    } finally {
+      trailClose(this, tid);
+    }
+  }
+  private async runEvent0(e: LifeEvent, loc: string, fought: { v: boolean }, title?: string) {
     const L = this.L;
     if (!e.repeat) L.choicesDone.push(e.id);
     else (L.seen ??= {})[e.id] = (L.seen[e.id] ?? 0) + 1;
@@ -1253,6 +1278,7 @@ export class Game {
         a.resolved = true;
         (L.acqResolved ??= []).push({ id: a.id, relation: a.relation, earlier: false });
         this.log(`与${a.name}的这段${RELATION_NAMES[a.relation]}，了了。`, 'fate');
+      trailChip(this, '了结');
       }
     }
     if (e.flag === 'nemesisWin' && this.M.nemesis) {
@@ -1369,6 +1395,17 @@ export class Game {
     const beat = def.beats[h.beat];
     const ev = typeof beat.ev === 'string' ? IDENTITY_CHOICES.find((x) => x.id === beat.ev) ?? CHOICES.find((x) => x.id === beat.ev) : beat.ev;
     const beatNo = h.beat;
+    const tid = trailOpen(this, { kind: 'hook', title: `引 · ${def.name}`, loc: c.loc, text: ev?.text, thread: `hook:${h.id}`, threadName: `引子「${def.name}」`, beat: BEAT_NAMES[beatNo], ev });
+    try {
+      await this.hookBeat0(c, fought, ev, beatNo);
+    } finally {
+      trailClose(this, tid);
+    }
+  }
+  private async hookBeat0(c: Card, fought: { v: boolean }, ev: LifeEvent | undefined, beatNo: number) {
+    const L = this.L;
+    const h = L.hook!;
+    const def = HOOK_BY_ID[h.id];
     if (ev?.options?.length) {
       if (!L.choicesDone.includes(ev.id)) L.choicesDone.push(ev.id);
       const opts = ev.options.filter((o) => !o.when || o.when(L, this.M));
@@ -1391,6 +1428,8 @@ export class Game {
     if (!h || h.outcome) return;
     h.outcome = outcome;
     const def = HOOK_BY_ID[h.id];
+    if (trailTop(this) == null || outcome === 'open') trailMark(this, { kind: 'hook', title: `「${def.name}」${outcome === 'done' ? '了结' : '未了'}`, text: why, thread: `hook:${h.id}`, threadName: `引子「${def.name}」`, beat: outcome === 'done' ? '了' : '断' });
+    else trailChip(this, '引子了结');
     if (outcome === 'open') {
       (L.acqNew ??= []).push({ role: def.acq.role, relation: def.acq.relation, src: 'hook' });
       this.log(`「${def.name}」没有走完${why ? `（${why}）` : ''}。`, 'fate');
@@ -1429,6 +1468,15 @@ export class Game {
     const L = this.L;
     const a = (this.M.acquaintances ?? []).find((x) => x.id === c.acq);
     if (!a || a.resolved) return this.log(pick(L.inDao ? NOTHING_CULT : NOTHING_MORTAL));
+    const tid = trailOpen(this, { kind: 'acq', title: `故 · ${a.name}`, loc: c.loc, thread: `acq:${a.id}`, threadName: `故人${a.name}（${RELATION_NAMES[a.relation]}）`, text: `第 ${a.life} 世结下的${RELATION_NAMES[a.relation]}` });
+    try {
+      await this.reunion0(c, fought, a);
+    } finally {
+      trailClose(this, tid);
+    }
+  }
+  private async reunion0(c: Card, fought: { v: boolean }, a: Acquaintance) {
+    const L = this.L;
     L.acqMet!.push(a.id);
     L.acqCards = (L.acqCards ?? 0) + 1;
     a.lastSeen = L.lifeNo;
@@ -1523,6 +1571,15 @@ export class Game {
   }
 
   async bondEvent(b: BondEvent, fought: { v: boolean }) {
+    const name = COMPANION_NAMES[b.comp];
+    const tid = trailOpen(this, { kind: 'bond', title: `${name} · ${b.title}`, loc: 'karma', text: b.text, thread: `bond:${b.comp}`, threadName: name });
+    try {
+      await this.bondEvent0(b, fought);
+    } finally {
+      trailClose(this, tid);
+    }
+  }
+  private async bondEvent0(b: BondEvent, fought: { v: boolean }) {
     const L = this.L;
     const name = COMPANION_NAMES[b.comp];
     // 赤衣第 3 段要先在这一世打赢他：命灯已过第 2 段时，他会再来约战
@@ -1555,6 +1612,7 @@ export class Game {
     if ((L.bonds[c] ?? 0) >= 2 || this.lamp(c) >= 9) return;
     L.bonds[c] = (L.bonds[c] ?? 0) + 1;
     this.log(`${COMPANION_NAMES[c]}的命灯亮了一分（${this.lamp(c)} 级）。`, 'companion');
+    trailChip(this, `${COMPANION_NAMES[c]}命灯 +1`);
     this.highlight(`与${COMPANION_NAMES[c]}了却一段因果`, 70, 'bond');
     if (c === 'fox' && this.lamp('fox') >= 3) this.gainPage(12);
     if (c === 'chiyi' && this.lamp('chiyi') >= 3) this.gainPage(16);
@@ -1611,6 +1669,14 @@ export class Game {
   }
 
   async hebo() {
+    const tid = trailOpen(this, { kind: 'choice', title: '河伯', loc: 'river' });
+    try {
+      await this.hebo0();
+    } finally {
+      trailClose(this, tid);
+    }
+  }
+  private async hebo0() {
     const L = this.L;
     L.flags.heboMet = 1;
     const i = await this.ask('河伯', '河水忽然停了。一个披着蓑衣的人从水里站起来：他是被墨淹没的画中河神，三千年来守着这条河，想换一个人守。', ['替他守河', '斩了他', '放他走'], 'event', true);
@@ -1630,6 +1696,14 @@ export class Game {
   }
 
   async regretEvent(type: string, loc: string) {
+    const tid = trailOpen(this, { kind: 'choice', title: '前世遗憾', loc });
+    try {
+      await this.regret0(type, loc);
+    } finally {
+      trailClose(this, tid);
+    }
+  }
+  private async regret0(type: string, loc: string) {
     const L = this.L;
     const r = REGRETS[type];
     const fixedRegret = L.regretsActive.find((x) => x.type === type);
@@ -1727,6 +1801,16 @@ export class Game {
   }
 
   async fight(o: { kind: BattleKind; title: string; loc: string; prep?: boolean; elites?: number; boss?: Boss; reward?: number; tutorial?: boolean; mode?: 'ask' | 'free' }): Promise<BattleResult | null> {
+    const tid = trailOpen(this, { kind: 'battle', title: o.title, loc: o.loc });
+    let res: BattleResult | null = null;
+    try {
+      res = await this.fight0(o);
+    } finally {
+      trailClose(this, tid, [res ? (res.win ? '胜' : '败') : '未战']);
+    }
+    return res;
+  }
+  private async fight0(o: { kind: BattleKind; title: string; loc: string; prep?: boolean; elites?: number; boss?: Boss; reward?: number; tutorial?: boolean; mode?: 'ask' | 'free' }): Promise<BattleResult | null> {
     const L = this.L;
     const realm = Math.max(1, L.realm);
     const mainLine = o.kind === 'trial' && L.realm === 5;
@@ -1933,6 +2017,7 @@ export class Game {
     }
     L.deathCause = cause;
     L.deathLoc = loc ?? null;
+    trailMark(this, { kind: 'death', title: cause, loc });
     this.log(`${cnAge(L.age)}岁，${cause}${loc && LOC_BY_ID[loc] ? '于' + LOC_BY_ID[loc].name : ''}。`, 'death');
     // 掌天瓶第 3 段：死前一刻
     if (L.inDao && !L.flags.bottleEnd && this.lamp('bottle') === 2) {
@@ -2025,6 +2110,7 @@ export class Game {
     L.wish.progress = 1;
     const d = this.wishDef(L.wish.id);
     this.log(`心愿圆满：「${d?.name ?? '弥补遗憾'}」`, 'wish');
+    trailMark(this, { kind: 'wish', title: `心愿圆满「${d?.name ?? '弥补遗憾'}」` });
     this.highlight(`了却心愿「${d?.name}」`, 100, 'wish');
     if (d?.page) this.gainPage(d.page);
   }
@@ -2051,6 +2137,12 @@ export class Game {
     const ep = this.epitaph(endingKey);
     M.epitaphs.unshift(ep);
     M.epitaphs = M.epitaphs.slice(0, 50);
+    const tl = L.trail?.nodes ?? [];
+    if (tl.length && tl[tl.length - 1].kind !== 'death') {
+      const last = tl[tl.length - 1];
+      trailMark(this, { kind: 'death', title: L.deathCause ?? (endingKey ? `结局 · ${ENDINGS[endingKey as keyof typeof ENDINGS]?.name ?? endingKey}` : L.ended === 'lord' ? '斩劫主' : L.ended ?? '终'), from: last.age === L.age && last.kind === 'battle' ? last.id : undefined });
+    }
+    trailArchive(M, L);
     if (L.epitaphSpecial === '井中人' && !M.discoveries.includes('well')) M.discoveries.push('well');
 
     // 结算（R10）
@@ -2333,7 +2425,16 @@ export class Game {
 
   // ================= IO 包装 =================
   async ask(title: string, text: string, options: string[], style: Prompt['style'] = 'event', important = false, key?: string): Promise<number> {
-    return this.io.choose({ title, text, options: options.map((o) => { const [label, desc] = o.split('｜'); return { label, desc }; }), style, important, key });
+    const i = await this.io.choose({ title, text, options: options.map((o) => { const [label, desc] = o.split('｜'); return { label, desc }; }), style, important, key });
+    const label = (options[i] ?? '').split('｜')[0];
+    // 经历图谱：事件里的抉择记在事件名下；人生大关（抓周、仙缘、择本命……）单独记一笔
+    if (trailTop(this) != null) trailPick(this, label);
+    else if (this.L && !this.L.deathCause && !this.L.ended && style === 'milestone') {
+      const id = trailOpen(this, { kind: 'choice', title, text });
+      trailPick(this, label);
+      trailClose(this, id);
+    }
+    return i;
   }
   choose(p: Prompt) {
     return this.io.choose(p);

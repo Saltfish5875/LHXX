@@ -7,6 +7,7 @@ import { HOLDINGS } from './data/board';
 import { loadLife, loadMeta, resetAll, saveMeta, lampOf } from './game/meta';
 import { runBattle } from './battle/view';
 import { openBag } from './bag';
+import { openTrail } from './trail-view';
 import { bookEntries, dizhun, enemyMul, gongLine, identityLine, identityOpen } from './game/cult';
 import { ACHIEVEMENTS, GONGFA, GF_GRADES, IDENTITIES, TIER_NAMES } from './data/cult';
 import { FATE_BY_ID } from './data/fate';
@@ -859,6 +860,11 @@ function showPast() {
   (box.querySelector('.btn.primary') as HTMLButtonElement).onclick = closeModal;
 }
 
+function showTrail() {
+  const box = openModal('', 'trail');
+  openTrail(box, meta, game?.L ?? null, closeModal);
+}
+
 function showSettings() {
   const box = openModal(`<h2>设置</h2>
     <div class="set-row"><b>自动倾向</b>${(['safe', 'chance', 'war'] as Tendency[]).map((t) => `<label><input type="radio" name="t" value="${t}" ${meta.settings.tendency === t ? 'checked' : ''}>${TEND_NAMES[t]}</label>`).join('')}</div>
@@ -889,7 +895,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-open]').forEach((b) => {
     if (modalEl.classList.contains('show')) return;
     if (b.dataset.open === 'panel') return togglePanel();
     togglePanel(false);
-    ({ book: showBook, lamps: showLamps, past: showPast, settings: showSettings })[b.dataset.open as 'book']();
+    ({ book: showBook, lamps: showLamps, past: showPast, trail: showTrail, settings: showSettings })[b.dataset.open as 'book']();
   };
 });
 
