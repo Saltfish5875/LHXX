@@ -1264,14 +1264,6 @@ body {
   container-type: inline-size;
 }
 .board-landscape { position: absolute; width: 100%; height: 100%; pointer-events: none; }
-.map-name {
-  text-anchor: middle;
-  font-family: var(--brush);
-  font-size: 22px;
-  fill: #729b96;
-  letter-spacing: 5px;
-}
-.map-caption { text-anchor: middle; font-family: var(--serif); font-size: 8px; fill: #7b9995; }
 .tile {
   --ground: #dce5cf;
   --edge-left: #b2c6b2;
@@ -1301,62 +1293,53 @@ body {
 .tile-edge-left { fill: var(--edge-left); }
 .tile-edge-right { fill: var(--edge-right); }
 .tile-inset { fill: none; stroke: #f6f6df; stroke-opacity: .55; stroke-width: .8; pointer-events: none; }
-.tile-prop { transition: transform .18s; transform-origin: 60px 98px; }
-.tile:hover .tile-prop, .tile:focus-visible .tile-prop { transform: translateY(-4px); }
+/* 当前格只展示棋子，地点小景让位；切换地块时不向相邻格抬升。 */
+.tile.here .tile-prop { visibility: hidden; }
 .tile:hover .tile-ground, .tile:focus-visible .tile-ground, .tile.focused .tile-ground { stroke: #517f80; stroke-width: 2.5; fill: #e8ecd4; }
 .tile:focus-visible .tile-inset { stroke: #3c727e; stroke-width: 2; stroke-dasharray: 3 2; }
 .t-name {
   position: absolute;
-  top: 70%;
-  left: 15%;
-  width: 70%;
-  text-align: center;
+  top: 68%;
+  left: 18%;
+  width: 64%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 15px;
+  padding: 0 2px;
+  border: 1px solid rgba(83,124,108,.22);
+  border-radius: 4px;
+  background: #f5f8ed;
   font-size: clamp(10px, 2.4cqw, 13px);
   line-height: 1.2;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-shadow: 0 1px 2px #f5f3de, 0 0 3px #f5f3de;
-}
-.t-month {
-  position: absolute;
-  top: 89%;
-  left: 30%;
-  width: 40%;
   text-align: center;
-  font-size: clamp(8px, 1.8cqw, 10px);
-  line-height: 1.2;
-  color: #6b8984;
+  pointer-events: auto;
 }
+.t-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tile:disabled .t-name { pointer-events: none; }
 .t-tag {
-  position: absolute;
-  top: 16%;
-  right: 2%;
-  width: 14px;
-  height: 16px;
+  flex: none;
+  padding: 1px 2px;
   border-radius: 2px;
   background: #6f9381;
   color: #fff8e4;
   font-family: var(--brush);
-  font-size: 11px;
-  line-height: 16px;
-  text-align: center;
-  transform: rotate(-4deg);
+  font-size: 10px;
+  line-height: 1.1;
 }
 .t-lv {
-  position: absolute;
-  top: 49%;
-  left: 9%;
-  width: 15px;
-  height: 15px;
-  border: 1px solid #bfaa71;
-  border-radius: 50%;
-  background: #f4ead1;
+  flex: none;
   color: #8e773f;
-  font-size: 10px;
-  line-height: 14px;
-  text-align: center;
+  font-size: 9px;
+  line-height: 1.1;
 }
+.t-lv::before { content: '·'; }
+/* 全图缩略时只保留图形和事件印签，长名称由点格后的详情卡承接。 */
+.board-map.overview .t-name-text, .board-map.overview .t-lv { display: none; }
+.board-map.overview .t-name:not(:has(.t-tag)) { display: none; }
+.board-map.overview .t-name { border: 0; background: none; padding: 0; min-height: 0; }
 .tile.k-start { --ground: #e4dfbd; --edge-left: #c7b991; --edge-right: #b2a47d; }
 .tile.k-fate { --ground: #e9dfbd; --rim: #c7b071; --edge-left: #c9ba8e; --edge-right: #ae9e75; }
 .tile.k-hold { --ground: #d8e2bb; }
@@ -1390,12 +1373,10 @@ body {
 .tile.in-path .route-dot { opacity: 1; }
 .board.peeking .tile:not(.peekable) { opacity: .42; }
 .tile.peekable .tile-ground { stroke: #4d8e9b; stroke-width: 2.5; stroke-dasharray: 4 3; }
-.tile.peeked .t-name::after { content: '·窥'; color: var(--blue); }
-.tile.chosen .tile-prop { transform: translateY(-6px); }
-.tile .pick-seal { top: 40%; right: 30%; width: 24px; height: 24px; line-height: 24px; font-size: 18px; }
-.board.gathered .signal-danger { animation: signalPulse 1.4s ease-in-out infinite; }
+.tile.peeked .t-name-text::after { content: '·窥'; color: var(--blue); }
+
+.tile .pick-seal { top: 35%; right: 5%; width: 18px; height: 18px; line-height: 18px; font-size: 13px; }
 @keyframes landGlow { 50% { fill: #ebf3c8; stroke: #70b7af; } }
-@keyframes signalPulse { 50% { opacity: .4; } }
 /* 操作台保持正向，地块详情和骰子在手机上也可直接阅读。 */
 .board-center {
   display: flex;
@@ -1664,7 +1645,6 @@ body {
   .roll-btn .die { --sz: 26px; }
   .again-btn { padding: 5px 8px; font-size: 14px; }
   .again-btn small { font-size: 9px; }
-  .t-tag { top: 13%; right: 0; width: 12px; height: 14px; font-size: 10px; line-height: 14px; }
 }
 /* 宽屏将经历与棋盘并列，两个区域各自滚动，棋盘不再压缩正文高度。 */
 @media (min-width: 981px) and (min-height: 501px) {

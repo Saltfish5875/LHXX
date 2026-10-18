@@ -97,10 +97,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 }
 .board .tile.target .tile-ground { fill: #dfedd5; stroke: #477c73; }
 .board .tile.here .tile-ground { fill: #f5ecd6; stroke: #997f51; }
-.board .t-name { color: #355c57; text-shadow: 0 1px 2px #f5f8ed; }
-.board .t-month { color: #536f66; }
-.map-name { fill: #46756b; }
-.map-caption { fill: #5a796f; }
+.board .t-name { color: #355c57; text-shadow: none; }
+.board .tile.here .t-name { border-color: #b59a6a; background: #fff5df; }
+.board .tile.target .t-name { border-color: #477c73; background: #e3f0df; }
 .die {
   background: #f7f9ed;
   border-color: #a9c3b3;
@@ -109,7 +108,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .roll-btn, .again-btn { box-shadow: none; border-color: var(--line); }
 .roll-btn { background: #edf3e6; color: var(--teal); animation: none; }
 .roll-btn b { color: var(--teal); }
-.land-tip > span, .tile-tip-body { box-shadow: 0 2px 8px rgba(43,78,72,.09); }
+.tile-tip-body { box-shadow: 0 2px 8px rgba(43,78,72,.09); }
 
 /* 所有抉择、天书、设置、结算共用一张清淡纸面。 */
 .modal {
