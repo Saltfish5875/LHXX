@@ -64,7 +64,7 @@ export function renderEventCard(box: HTMLElement, p: Prompt, scene: Scene): { op
       const h = cv.clientHeight;
       if (!w || !h || !src.width || !src.height) return;
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      if (cv.width !== Math.round(w * dpr)) {
+      if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
         cv.width = Math.round(w * dpr);
         cv.height = Math.round(h * dpr);
       }

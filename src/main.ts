@@ -26,6 +26,7 @@ import { moment, momentsIdle, setMomentSpeed } from './art/moments';
 import { sfx, setSound, soundOn } from './art/sound';
 import { Chip, clearOutcome, playResult, showOutcome, stampCard, stampOption, sweep } from './art/feedback';
 import { boardBackdrop, boardGeometry, tileGraphic, tilePosition } from './art/board';
+import './art/shanshui.css';
 
 const $ = (id: string) => document.getElementById(id)!;
 const scrollEl = $('scroll');

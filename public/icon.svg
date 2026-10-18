@@ -1,7 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#eef3f5"/>
-  <path d="M0 360 C120 290 200 330 280 300 C360 270 430 300 512 270 V512 H0Z" fill="#98bace"/>
-  <path d="M0 420 C140 370 240 410 330 380 C410 355 460 380 512 360 V512 H0Z" fill="#3a6080" opacity="0.75"/>
-  <circle cx="256" cy="210" r="112" fill="none" stroke="#1d2a38" stroke-width="22" stroke-dasharray="560 140" stroke-linecap="round"/>
-  <text x="256" y="250" text-anchor="middle" font-family="serif" font-size="120" font-weight="700" fill="#b03030">回</text>
+  <rect width="512" height="512" rx="96" fill="#edf5f1"/>
+  <path d="M0 362 100 180 145 236 247 62 315 206 385 136 512 356V512H0Z" fill="#bdd5cd"/>
+  <path d="m0 420 120-126 36 40L263 150l100 180 57-64 92 154v92H0Z" fill="#96bcb2"/>
+  <path d="m168 318 88-138 24 48m-87 106 64-94 42 76m45-20 42-60 24 34" fill="none" stroke="#729e92" stroke-width="5" stroke-linecap="round"/>
+  <path d="M0 400q128-58 256 0t256 0v112H0Z" fill="#e2efe5"/>
+  <circle cx="256" cy="252" r="126" fill="#f3f7ed" fill-opacity=".8" stroke="#568578" stroke-width="8"/>
+  <text x="256" y="297" text-anchor="middle" font-family="serif" font-size="142" fill="#386e68">回</text>
+  <rect x="347" y="341" width="37" height="44" rx="4" fill="#a45248"/>
+  <path d="M356 351h19m-15 8h11m-15 9h19" stroke="#f5f5e7" stroke-width="3"/>
 </svg>

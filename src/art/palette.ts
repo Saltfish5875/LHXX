@@ -1,20 +1,20 @@
-// 「青冥画卷」配色：云海之上的青绿仙山，天青白底、白金仙宫、御剑青光；墨潮是画里唯一的纯黑。
+// 「青冥画卷」配色：淡彩青绿、暖白纸面与少量朱砂，场景、棋盘和图标共用。
 
 export const C = {
-  paper: '#eef5f8', // 天青白纸
-  paperDeep: '#dbe7ec',
-  ink: '#1c232c', // 焦墨
-  inkSoft: '#46535f', // 淡墨
-  stoneBlue: '#2e6e8e', // 石青
-  stoneGreen: '#3f8a8c', // 石绿（偏青）
-  indigo: '#3a5f7a', // 花青
+  paper: '#edf5f1', // 天青白纸
+  paperDeep: '#d9e9e3',
+  ink: '#243f40', // 焦墨
+  inkSoft: '#526c69', // 淡墨
+  stoneBlue: '#477c83', // 石青
+  stoneGreen: '#568b80', // 石绿（偏青）
+  indigo: '#537a83', // 花青
   ochre: '#8a7a68', // 赭石（压灰，只做点缀）
-  cinnabar: '#b8382e', // 朱砂
-  gold: '#b8923a', // 泥金
-  jade: '#7fb3bb',
+  cinnabar: '#a45248', // 朱砂
+  gold: '#967b4b', // 泥金
+  jade: '#9cbeb5',
   mist: 'rgba(239,245,248,0.85)',
   line: '#2b5d66', // 仙山与建筑的勾线：深青，不用焦墨
-  cloudShade: '#cfe2ee',
+  cloudShade: '#d2e5e1',
   swordLight: '#7fe0ff', // 御剑青光
 };
 
@@ -35,7 +35,7 @@ export interface EraLook {
 // 一人千面的七个年代：同一套山水，换天色和点景
 // hills = [受光面, 背光面]：石柱峰左亮右暗
 export const ERA_LOOK: Record<string, EraLook> = {
-  E1: { sky: ['#a9d4ee', '#f3f9fc'], hills: ['#a8dccf', '#2f8088'], far: '#b9d8e4', accent: C.stoneBlue },
+  E1: { sky: ['#c1dad9', '#eff6f0'], hills: ['#b2d0c5', '#63928d'], far: '#b9d8e4', accent: C.stoneBlue },
   E2: { sky: ['#c3d0d8', '#eef2f2'], hills: ['#b3cbc4', '#46707a'], far: '#c4d0d6', accent: C.cinnabar, smoke: true },
   E3: { sky: ['#9fd0ee', '#f2f9fc'], hills: ['#a3dad6', '#25788e'], far: '#b2d6e6', accent: '#2f8aa0', sea: true },
   E4: { sky: ['#9ccdf0', '#f4faff'], hills: ['#b0e2d6', '#2a7c8c'], far: '#b4d4ea', accent: C.stoneBlue, swordLight: true },
