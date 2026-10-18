@@ -1,5 +1,6 @@
 import './style.css';
 import './art/art.css';
+import './art/cards.css';
 import { Game, IO, Prompt, skillName } from './game/engine';
 import { BEAT_LABELS, CHAIN_BY_ID, activeChains } from './game/chains';
 import { RollAction, RollView, autoAgain, autoDie, autoNudge, faceName, tileSceneLoc } from './game/board';
@@ -9,6 +10,8 @@ import { OFFER_KEY, PRESETS, SLOT_COUNT, SaveFile, applySave, currentSave, delet
 import { runBattle } from './battle/view';
 import { openBag } from './bag';
 import { openTrail } from './trail-view';
+import { renderEventCard, useCards } from './event-card';
+import { leadLine } from './game/cards';
 import { bookEntries, dizhun, enemyMul, gongLine, identityLine, identityOpen } from './game/cult';
 import { ACHIEVEMENTS, GONGFA, GF_GRADES, IDENTITIES, TIER_NAMES } from './data/cult';
 import { FATE_BY_ID } from './data/fate';
@@ -20,7 +23,7 @@ import { LOC_BY_ID } from './data/events';
 import { Scene } from './art/scene';
 import { moment, momentsIdle, setMomentSpeed } from './art/moments';
 import { sfx, setSound, soundOn } from './art/sound';
-import { Chip, clearOutcome, showOutcome, stampCard, stampOption, sweep } from './art/feedback';
+import { Chip, clearOutcome, playResult, showOutcome, stampCard, stampOption, sweep } from './art/feedback';
 import { boardBackdrop, boardGeometry, tileGraphic, tilePosition } from './art/board';
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -69,21 +72,30 @@ async function choose(p: Prompt): Promise<number> {
   await momentsIdle();
   if (p.style === 'well' || p.style === 'epitaph') scene.set({ mode: 'well' });
   return new Promise((resolve) => {
+    const cards = useCards(p);
     const box = openModal(
-      `<h2>${esc(p.title)}</h2><div class="prompt-text">${nl(p.text)}</div><div class="opts"></div><div class="hint">数字键 1～${p.options.length} 快速选择</div>`,
-      `style-${p.style ?? 'event'}`,
+      cards ? '' : `<h2>${esc(p.title)}</h2><div class="prompt-text">${nl(p.text)}</div><div class="opts"></div><div class="hint">数字键 1～${p.options.length} 快速选择</div>`,
+      `style-${p.style ?? 'event'}${cards ? ' ec-modal' : ''}`,
     );
-    const opts = box.querySelector('.opts')!;
-    const enabled: number[] = [];
-    p.options.forEach((o, i) => {
-      const b = document.createElement('button');
-      b.className = 'opt';
-      b.disabled = !!o.disabled;
-      b.innerHTML = `<b>${i + 1}. ${esc(o.label)}</b>${o.desc ? `<span>${esc(o.desc)}</span>` : ''}`;
-      b.onclick = () => done(i);
-      opts.appendChild(b);
-      if (!o.disabled) enabled.push(i);
-    });
+    let stopPic = () => {};
+    let opts: Element;
+    if (cards) {
+      // 场景卡 + 行动卡
+      const r = renderEventCard(box, p, scene);
+      opts = r.opts;
+      stopPic = r.stop;
+      r.buttons.forEach((b, i) => (b.onclick = () => done(i)));
+    } else {
+      opts = box.querySelector('.opts')!;
+      p.options.forEach((o, i) => {
+        const b = document.createElement('button');
+        b.className = 'opt';
+        b.disabled = !!o.disabled;
+        b.innerHTML = `<b>${i + 1}. ${esc(o.label)}</b>${o.desc ? `<span>${esc(o.desc)}</span>` : ''}`;
+        b.onclick = () => done(i);
+        opts.appendChild(b);
+      });
+    }
     const onKey = (e: KeyboardEvent) => {
       const n = Number(e.key) - 1;
       if (n >= 0 && n < p.options.length && !p.options[n].disabled) done(n);
@@ -113,9 +125,12 @@ async function choose(p: Prompt): Promise<number> {
       sfx.pluck(i + 2, 0.35);
       // 只有两项以上的真选择才落印、记得失；「继续」「开卷」这类单按钮直接过
       if (p.options.length > 1) {
+        const chosen = opts.querySelectorAll<HTMLElement>('.opt')[i];
+        flyFrom = chosen ? chosen.getBoundingClientRect() : null;
         await stampOption([...opts.querySelectorAll<HTMLElement>('.opt')], i, auto);
         beginChoice(p.options[i].label);
       }
+      stopPic();
       closeModal();
       resolve(i);
     }
@@ -540,6 +555,12 @@ interface Stats {
   xinde: number;
   fj: number;
   traces: number;
+  partner: boolean;
+  pet: string | null;
+  gains: string[];
+  chains: number;
+  acq: number;
+  disciples: number;
 }
 function stats(): Stats | null {
   const L = game?.L;
@@ -565,9 +586,16 @@ function stats(): Stats | null {
     xinde: L.xinde ?? 0,
     fj: (L.fjBag?.length ?? 0) + (L.bag ?? []).reduce((a, t) => a + (t.fj?.length ?? 0), 0),
     traces: L.traces.length,
+    partner: !!L.partner,
+    pet: L.pet?.name ?? null,
+    gains: (L.gains ?? []).map((g) => g.name),
+    chains: activeChains(L).length,
+    acq: game.M.acquaintances?.length ?? 0,
+    disciples: L.disciples ?? 0,
   };
 }
-let pending: { snap: Stats; label: string; caption: string | null } | null = null;
+let pending: { snap: Stats; label: string; caption: string | null; judge?: string } | null = null;
+let flyFrom: DOMRect | null = null; // 刚选中的那张行动卡，结果从这里飞出去
 function beginChoice(label: string) {
   if (replaying) return;
   const snap = stats();
@@ -600,6 +628,12 @@ function diffChips(a: Stats, b: Stats): Chip[] {
   for (const uid of Object.keys(b.qi)) if (a.qi[uid] === undefined) out.push({ text: '得一件法宝', tone: 'gold' });
   if (b.fj > a.fj) out.push({ text: `附诀 +${b.fj - a.fj}`, tone: 'gold' });
   num('心得', b.xinde - a.xinde);
+  if (b.partner && !a.partner) out.push({ text: '结为道侣', tone: 'gold' });
+  if (b.pet && b.pet !== a.pet) out.push({ text: `得灵宠「${b.pet}」`, tone: 'gold' });
+  for (const g of b.gains) if (!a.gains.includes(g)) out.push({ text: `得「${g}」`, tone: 'gold' });
+  if (b.disciples > a.disciples) out.push({ text: '收徒', tone: 'gold' });
+  if (b.chains > a.chains) out.push({ text: '结下一段缘', tone: 'gold' });
+  if (b.acq > a.acq) out.push({ text: '结识故人', tone: 'neutral' });
   if (b.traces > a.traces) out.push({ text: '留下一道痕迹', tone: 'neutral' });
   return out.slice(0, 7);
 }
@@ -611,9 +645,15 @@ function settle() {
   const now = stats();
   if (!now || now.life !== p.snap.life) return;
   const chips = diffChips(p.snap, now);
-  let line = p.caption;
-  if (line && line.length > 46) line = line.slice(0, 45) + '…';
-  showOutcome(sceneHost, line, chips, auto ? meta.settings.speed * 1.6 : 1);
+  // 结算一句话：判定成败 + 结果原文的第一句；什么都没变就说一声
+  let line = p.caption ? leadLine(p.caption).lead : null;
+  if (p.judge) line = p.judge + (line ?? '');
+  if (line && line.length > 52) line = line.slice(0, 51) + '…';
+  if (!line && !chips.length && p.label && flyFrom) line = `「${p.label}」，此事就此了了。`;
+  const speed = auto ? meta.settings.speed * 1.6 : 1;
+  showOutcome(sceneHost, line, chips, speed);
+  playResult(chips, flyFrom, sceneHost, speed);
+  flyFrom = null;
   // 棋盘上落子的那一格，冒一个简略结果
   if (landed) landed.tip = { chips: chips.slice(0, 3), caption: line };
 }
@@ -660,7 +700,12 @@ function log(e: LogEntry) {
     scrollEl.appendChild(h);
     lastAge = e.age;
   }
-  if (pending && !replaying && !pending.caption && e.kind !== 'fate' && e.kind !== 'death') pending.caption = e.text;
+  if (pending && !replaying && e.kind !== 'death' && !/^【/.test(e.text)) {
+    // 「……你选择了「X」。」是复述，不算结果；判定成败单独记
+    const j = e.text.match(/^（(.{2})判定(成功|失败)）$/);
+    if (j) pending.judge = j[2] === '成功' ? '成了。' : '没成。';
+    else if (!pending.caption && !e.text.includes('你选择了「')) pending.caption = e.text;
+  }
   const d = document.createElement('div');
   d.className = `entry k-${e.kind ?? 'normal'}${replaying ? '' : ' fresh'}`;
   d.textContent = e.text;
