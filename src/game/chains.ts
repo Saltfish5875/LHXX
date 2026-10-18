@@ -13,7 +13,7 @@ import { ENC_MORTAL } from '../data/encounters-mortal';
 import { ENC_CULT_A } from '../data/encounters-cult-a';
 import { ENC_CULT_B } from '../data/encounters-cult-b';
 import { chance, pick, randInt } from './rng';
-import { trailChip, trailClose, trailHint, trailMark, trailOpen, trailThread, trailTop } from './trail';
+import { trailChip, trailClose, trailHere, trailHint, trailMark, trailOpen, trailRef, trailThread, trailTop } from './trail';
 
 export const CHAINS: ChainDef[] = [...CHAINS_A, ...CHAINS_B, ...CHAINS_C];
 export const CHAIN_BY_ID: Record<string, ChainDef> = Object.fromEntries(CHAINS.map((c) => [c.id, c]));
@@ -76,7 +76,7 @@ export async function chainOp(g: Game, op: ChainOp) {
     (L.chains ??= []).push(st);
     g.log(`缘起：「${CHAIN_BY_ID[id].name}」。`, 'fate');
     if (op.op === 'start') trailThread(g, id, `「${CHAIN_BY_ID[id].name}」`);
-    else trailMark(g, { kind: 'chain', title: `缘起 · ${CHAIN_BY_ID[id].name}`, thread: id, threadName: `「${CHAIN_BY_ID[id].name}」`, beat: '承' });
+    else trailMark(g, { kind: 'chain', title: `缘起 · ${CHAIN_BY_ID[id].name}`, thread: id, threadName: `「${CHAIN_BY_ID[id].name}」`, beat: '承', past: id === 'YG04' ? ['signin'] : undefined });
   }
   const st = chainOf(L, id);
   if (!st || st.end) return;
@@ -106,7 +106,7 @@ export function breakChain(g: Game, st: ChainState, why: string) {
   g.log(`「${d.name}」断了（${why}）。`, 'fate');
   trailMark(g, { kind: 'chain', title: `「${d.name}」断了`, text: why, thread: st.id, threadName: `「${d.name}」`, beat: '断' });
   // 断链留个余波：有过几分缘的，留一位「诺」故人
-  if (st.yuan >= 2 && chance(0.5)) (L.acqNew ??= []).push({ role: d.name, relation: 'vow', src: 'chain' });
+  if (st.yuan >= 2 && chance(0.5)) (L.acqNew ??= []).push({ role: d.name, relation: 'vow', src: 'chain', node: trailHere(g) });
 }
 
 const tierOf = (y: number): ChainEnding['tier'] => (y >= 4 ? 'top' : y >= 2 ? 'mid' : 'low');
@@ -265,6 +265,7 @@ export function giveGain(g: Game, gn: Gain) {
   const M = g.M;
   if (gn.meta === 'clan') {
     M.clan = { name: gn.name, life: M.lives };
+    trailRef(g, 'clan');
     g.log(`立下「${gn.name}」。往后的轮回里，你可能投生在本族。`, 'milestone');
     g.highlight(`立「${gn.name}」`, 50, 'gain');
     return;
@@ -277,11 +278,13 @@ export function giveGain(g: Game, gn: Gain) {
   }
   if (gn.meta === 'nemesis') {
     M.nemesis = { name: gn.name, wins: M.nemesis?.wins ?? 0, life: M.lives };
+    trailRef(g, 'nemesis');
     g.log(`「${gn.name}」记住你了。往后每一世，他都会来找你。`, 'fate');
     return;
   }
   if (gn.meta === 'signin') {
     M.signin = Math.max(M.signin ?? 0, gn.lv ?? 3);
+    trailRef(g, 'signin');
     g.log('碑扶起来了。下一世，你一开局就会遇见它。', 'fate');
     return;
   }
@@ -367,7 +370,10 @@ export function clanBirth(g: Game) {
   const L = g.L;
   if (!M.clan || !chance(0.2)) return;
   L.attrs.fam = Math.min(12, L.attrs.fam + 2);
+  L.flags.clanBorn = 1;
   g.log(`你投生在「${M.clan.name}」。族谱上写着一个你很熟的名字。`, 'fate');
+  const r = M.trailRefs?.clan;
+  if (r) trailHint(g, r.id, '前世', r.life); // 连到这一世的出生
 }
 export const NEMESIS_EVENT: LifeEvent = {
   id: 'NEMESIS',

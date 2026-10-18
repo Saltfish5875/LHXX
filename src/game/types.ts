@@ -126,10 +126,11 @@ export interface Gain {
   meta?: 'clan' | 'shrine' | 'nemesis' | 'signin'; // 跨世：家族 / 神位 / 宿敌 / 签到碑
 }
 // ================= 经历图谱 =================
-export type TrailKind = 'birth' | 'choice' | 'flavor' | 'chain' | 'hook' | 'acq' | 'bond' | 'battle' | 'realm' | 'echo' | 'wish' | 'ruin' | 'death';
+export type TrailKind = 'birth' | 'choice' | 'flavor' | 'chain' | 'hook' | 'acq' | 'bond' | 'battle' | 'realm' | 'echo' | 'wish' | 'ruin' | 'death' | 'hold';
 export interface TrailLink {
   from: number;
-  why: '承' | '因' | '引发' | '余波' | '旧事';
+  why: '承' | '因' | '引发' | '余波' | '旧事' | '前世';
+  life?: number; // 来自另一世时，写那一世的世数
 }
 export interface TrailNode {
   id: number;
@@ -145,6 +146,13 @@ export interface TrailNode {
   threadName?: string;
   beat?: string;
   links: TrailLink[]; // 指向更早的节点
+}
+export interface PastTrail {
+  life: number;
+  era?: string;
+  age?: number;
+  end?: string; // 死因或结局
+  nodes: TrailNode[];
 }
 export interface TrailState {
   nodes: TrailNode[];
@@ -286,7 +294,7 @@ export interface LifeState {
   era?: string;
   hook?: HookState | null;
   acqMet?: string[];
-  acqNew?: { role: string; relation: AcqRelation; src: string }[]; // 本世结下、待结算的故人
+  acqNew?: { role: string; relation: AcqRelation; src: string; node?: number }[]; // 本世结下、待结算的故人
   acqResolved?: { id: string; relation: AcqRelation; earlier: boolean }[];
   acqCards?: number;
   insightExtra?: number;
@@ -384,6 +392,7 @@ export interface Holding {
   spent: number;
   name: string;
   forge?: number;
+  trail?: number; // 经历图谱：置下它的那一笔
 }
 export interface Legacy {
   id: string;
@@ -431,7 +440,9 @@ export interface MetaState {
   wheel: Record<string, number>;
   heritage: string | null;
   epitaphs: Epitaph[];
-  lastTrail?: { life: number; era?: string; nodes: TrailNode[] }; // 上一世的经历图谱
+  lastTrail?: { life: number; era?: string; nodes: TrailNode[] }; // 旧存档：上一世的经历图谱（读到后并进 pastTrails）
+  pastTrails?: PastTrail[]; // 最近 8 世的经历图谱，新的在前
+  trailRefs?: Record<string, { life: number; id: number }>; // 会在后世回来的事 → 它在第几世的哪个节点
   discoveries: string[];
   hebo: number;
   siluIdx: number;

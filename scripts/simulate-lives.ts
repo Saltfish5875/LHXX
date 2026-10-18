@@ -74,7 +74,7 @@ interface Stats {
   laps0: number;
   btitles: Record<string, number>;
   cult: { gong: number; layer: number; qi: number; fj: number; items: number; xinde: number; tiers: number[]; dao: number };
-  trail?: { nodes: number; flavor: number; links: Record<string, number>; linked: number; bytes: number; maxNodes: number };
+  trail?: { nodes: number; flavor: number; links: Record<string, number>; linked: number; bytes: number; maxNodes: number; metaBytes: number };
 }
 
 async function run(tend: Tendency): Promise<Stats> {
@@ -202,8 +202,9 @@ async function run(tend: Tendency): Promise<Stats> {
     }
     const L = g.L;
     // 经历图谱
-    const tn = g.M.lastTrail?.nodes ?? [];
-    const tr = (st.trail ??= { nodes: 0, flavor: 0, links: {}, linked: 0, bytes: 0, maxNodes: 0 });
+    const tn = g.M.pastTrails?.[0]?.nodes ?? [];
+    const tr = (st.trail ??= { nodes: 0, flavor: 0, links: {}, linked: 0, bytes: 0, maxNodes: 0, metaBytes: 0 });
+    tr.metaBytes = Math.max(tr.metaBytes, JSON.stringify(g.M).length);
     tr.nodes += tn.length;
     tr.maxNodes = Math.max(tr.maxNodes, tn.length);
     tr.flavor += tn.filter((x) => x.kind === 'flavor').length;
@@ -303,7 +304,7 @@ function report(tend: Tendency, st: Stats, meta: ReturnType<typeof newMeta>) {
   console.log(`修炼与法宝（入道的世）：功法 ${(c.gong / d).toFixed(1)} 门，最高层 ${(c.layer / d).toFixed(1)}，最好法宝品级 ${(c.qi / d).toFixed(1)}（0 凡 4 仙），附诀 ${(c.fj / d).toFixed(1)}，被动/主动法宝 ${(c.items / d).toFixed(1)}，余心得 ${(c.xinde / d).toFixed(1)}；身份档 凡/富/宗/顶 = ${c.tiers.join('/')}；轮回碑 ${meta.achievements.length}；底蕴 ${dizhun(meta)}`);
   const ch = st.chain;
   const tr = st.trail;
-  if (tr) console.log(`经历图谱：每世节点 ${(tr.nodes / Math.max(1, n)).toFixed(0)}（最多 ${tr.maxNodes}，流水 ${(tr.flavor / Math.max(1, n)).toFixed(0)}），有连线的节点 ${((tr.linked / Math.max(1, tr.nodes)) * 100).toFixed(0)}%；每世连线 ${Object.entries(tr.links).map(([k, v]) => `${k} ${(v / Math.max(1, n)).toFixed(1)}`).join('，')}；每世存档 ${(tr.bytes / Math.max(1, n) / 1024).toFixed(0)} KB`);
+  if (tr) console.log(`经历图谱：每世节点 ${(tr.nodes / Math.max(1, n)).toFixed(0)}（最多 ${tr.maxNodes}，流水 ${(tr.flavor / Math.max(1, n)).toFixed(0)}），有连线的节点 ${((tr.linked / Math.max(1, tr.nodes)) * 100).toFixed(0)}%；每世连线 ${Object.entries(tr.links).map(([k, v]) => `${k} ${(v / Math.max(1, n)).toFixed(1)}`).join('，')}；每世存档 ${(tr.bytes / Math.max(1, n) / 1024).toFixed(0)} KB，轮回数据最大 ${(tr.metaBytes / 1024).toFixed(0)} KB`);
   if (ch) console.log(`因果链：开过链的世 ${((ch.lives / Math.max(1, n)) * 100).toFixed(0)}%，每世开 ${(ch.started / Math.max(1, n)).toFixed(2)} 条；上/中/下/断 = ${ch.top}/${ch.mid}/${ch.low}/${ch.broken}，未走完 ${ch.started - ch.top - ch.mid - ch.low - ch.broken}；有灵宠的世 ${ch.pet}，有道侣的世 ${ch.partner}，每世其它收获 ${(ch.gains / Math.max(1, n)).toFixed(2)} 件；每世见扩充奇遇 ${(ch.newEv / Math.max(1, n)).toFixed(1)} 条；断链原因 ${JSON.stringify(st.breaks)}`);
   if (st.errors) console.log(`!!! 出错 ${st.errors} 次`);
 }

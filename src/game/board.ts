@@ -14,7 +14,7 @@ import {
 import { chance, pick, randInt, shuffle, weighted } from './rng';
 import { layerUp, retreat } from './cult';
 import { chainBeat, chainLapStart, chainTileFace, chainTileStale, chainTilesDue } from './chains';
-import { trailClose, trailHint, trailOpen } from './trail';
+import { trailClose, trailHere, trailHint, trailMark, trailOpen, trailRef } from './trail';
 
 const STOP = 0; // 「止」面
 const DUN = 7; // 「遁」面
@@ -645,7 +645,7 @@ async function land(g: Game, t: Tile): Promise<boolean> {
     }
     case 'ruin': {
       const lg = (g.M.legacies ?? []).find((x) => x.id === t.ref);
-      const tid = trailOpen(g, { kind: 'ruin', title: lg ? ruinName(lg, ruinForm(g, lg)) : '遗迹', loc: 'realm', text: lg ? `第 ${lg.life} 世留下的${HOLDINGS[lg.type].name}` : undefined });
+      const tid = trailOpen(g, { kind: 'ruin', title: lg ? ruinName(lg, ruinForm(g, lg)) : '遗迹', loc: 'realm', text: lg ? `第 ${lg.life} 世留下的${HOLDINGS[lg.type].name}` : undefined, thread: lg ? `legacy:${lg.id}` : undefined, threadName: lg ? `遗泽${lg.name}` : undefined });
       try {
         await landRuin(g, t, fought);
       } finally {
@@ -923,7 +923,8 @@ async function build(g: Game, slot: number) {
     acts.push(async () => {
       L.stones -= cost;
       const name = pick(d.names);
-      L.holdings!.push({ slot, type: k, lv: 1, idle: 0, spent: cost, name });
+      const trail = trailMark(g, { kind: 'hold', title: `置办${d.name}「${name}」`, loc: L.inDao ? 'sect' : 'home' });
+      L.holdings!.push({ slot, type: k, lv: 1, idle: 0, spent: cost, name, trail });
       delete L.flags.rebuildHalf;
       g.log(`你置办了${d.name}「${name}」。`, 'milestone');
     });
@@ -937,7 +938,8 @@ async function build(g: Game, slot: number) {
     opts.push({ label: `重振${lg.name}`, desc: `${unit} ${cost}；直接从 2 级起步`, disabled: L.stones < cost });
     acts.push(async () => {
       L.stones -= cost;
-      L.holdings!.push({ slot, type: lg.type, lv: 2, branch: lg.branch, idle: 0, spent: cost, name: lg.name });
+      const trail = trailMark(g, { kind: 'hold', title: `重振${lg.name}`, thread: `legacy:${lg.id}`, threadName: `遗泽${lg.name}` });
+      L.holdings!.push({ slot, type: lg.type, lv: 2, branch: lg.branch, idle: 0, spent: cost, name: lg.name, trail });
       g.M.legacies = (g.M.legacies ?? []).filter((x) => x !== lg);
       L.ruinCleared = L.ruinCleared!.filter((x) => x !== id);
       g.log(RUIN_REVIVE.replace('{名}', lg.name), 'milestone');
@@ -1111,6 +1113,7 @@ export function recordLegacies(g: Game) {
   for (const h of L.holdings ?? []) {
     if (h.lv < 3) continue;
     list.push({ id: `${L.lifeNo}-${h.type}`, type: h.type, lv: h.lv, branch: h.branch, era: L.era ?? 'E1', name: h.name, life: L.lifeNo });
+    trailRef(g, `legacy:${L.lifeNo}-${h.type}`, h.trail ?? trailHere(g));
     L.insightExtra = (L.insightExtra ?? 0) + h.lv * 10;
     g.log(`${h.name}（${h.lv} 级）留在了这一卷画里。`, 'fate');
   }

@@ -22,7 +22,7 @@ import { UNLOCKS, WHEEL, hasPage, lampOf, saveLife, saveMeta, wheelPrice } from 
 import { afterBattleCult, applyIdentity, autoEquip, checkAchievements, drawIdentity, ensureCult, giveQi, grantFujue, grantItem, layerCap, layerUp, learnGong, loadoutSpec, metaCult, resolvePending, rotateShop, settleBook, shopItems, startKit, upgradeGrade } from './cult';
 import { estDps } from '../battle/sim';
 import { CHAIN_STARTS, NEMESIS_EVENT, flagEnemyMul, NEW_ENCOUNTERS, addEcho, chainOp, clanBirth, freeAllies, gainSum, giveGain, givePet, petRealmUp, rollBonus } from './chains';
-import { trailArchive, trailChip, trailClose, trailHint, trailLine, trailMark, trailOpen, trailPick, trailReset, trailTop } from './trail';
+import { trailArchive, trailChip, trailClose, trailHere, trailHint, trailLine, trailMark, trailOpen, trailPick, trailRef, trailReset, trailTop } from './trail';
 import { ACHIEVEMENTS, GONGFA, IDENTITY_BY_ID, ITEMS, LAYER_NAMES, TIER_NAMES } from '../data/cult';
 
 export interface PromptOption {
@@ -319,7 +319,7 @@ export class Game {
       this.log('你出生那夜，砚池边多了一盏新灯。提灯的人还很小，看不见东西，但她在笑。', 'fate');
       L.flags.newLampShown = 1;
     }
-    trailMark(this, { kind: 'birth', title: `出生 · ${L.origin}`, text: `${ERA_BY_ID[L.era].name}。天赋：${talentNames}。命格「${fate.name}」。${L.hook ? `引子「${HOOK_BY_ID[L.hook.id].name}」。` : ''}` });
+    trailMark(this, { kind: 'birth', title: `出生 · ${L.origin}`, text: `${ERA_BY_ID[L.era].name}。天赋：${talentNames}。命格「${fate.name}」。${L.hook ? `引子「${HOOK_BY_ID[L.hook.id].name}」。` : ''}${L.flags.clanBorn && M.clan ? `投生在「${M.clan.name}」。` : ''}` });
     this.io.refresh();
     this.takeSnapshot();
   }
@@ -1140,7 +1140,7 @@ export class Game {
 
   // ================= 事件解释器 =================
   async runEvent(e: LifeEvent, loc: string, fought: { v: boolean }, title?: string) {
-    const tid = trailOpen(this, { kind: e.kind === 'flavor' || !e.options ? 'flavor' : 'choice', title: title ?? e.title ?? LOC_BY_ID[loc]?.name ?? '抉择', loc, text: e.text, ev: e });
+    const tid = trailOpen(this, { kind: e.kind === 'flavor' || !e.options ? 'flavor' : 'choice', title: title ?? e.title ?? LOC_BY_ID[loc]?.name ?? '抉择', loc, text: e.text, ev: e, past: e.id === 'NEMESIS' ? ['nemesis'] : undefined });
     try {
       await this.runEvent0(e, loc, fought, title);
     } finally {
@@ -1319,7 +1319,7 @@ export class Game {
     }
     if (e.flag === 'fortuneYear') L.flags.fortuneYear = L.age;
     if (e.flag === 'fateKnown') this.log(`卦上写着：你活不过${cnAge(this.lifespan())}岁。`, 'fate');
-    if (e.acq) (L.acqNew ??= []).push({ role: e.acq.role, relation: e.acq.relation, src: 'event' });
+    if (e.acq) (L.acqNew ??= []).push({ role: e.acq.role, relation: e.acq.relation, src: 'event', node: trailHere(this) });
     if (e.hl) this.highlight(e.hl.text, e.hl.score, 'face');
     if (e.insight) L.insightExtra = (L.insightExtra ?? 0) + e.insight;
     if (e.bond) this.bondUp(e.bond);
@@ -1431,7 +1431,7 @@ export class Game {
     if (trailTop(this) == null || outcome === 'open') trailMark(this, { kind: 'hook', title: `「${def.name}」${outcome === 'done' ? '了结' : '未了'}`, text: why, thread: `hook:${h.id}`, threadName: `引子「${def.name}」`, beat: outcome === 'done' ? '了' : '断' });
     else trailChip(this, '引子了结');
     if (outcome === 'open') {
-      (L.acqNew ??= []).push({ role: def.acq.role, relation: def.acq.relation, src: 'hook' });
+      (L.acqNew ??= []).push({ role: def.acq.role, relation: def.acq.relation, src: 'hook', node: trailHere(this) });
       this.log(`「${def.name}」没有走完${why ? `（${why}）` : ''}。`, 'fate');
       return;
     }
@@ -1551,6 +1551,7 @@ export class Game {
       const name = `${f.role}${f.role.length <= 2 ? pick(ACQ_NICK) : ''}`;
       const a: Acquaintance = { id: `A${L.lifeNo}-${list.length}-${randInt(100, 999)}`, name, role: f.role, relation: f.relation, era: L.era ?? 'E1', life: L.lifeNo, lastSeen: L.lifeNo, resolved: false };
       list.push(a);
+      trailRef(this, `acq:${a.id}`, f.node);
       lines.push(`${name}（${RELATION_NAMES[f.relation]}）：会在之后的某一世回来。`);
     }
     while (list.length > 8) list.shift();
@@ -1696,7 +1697,7 @@ export class Game {
   }
 
   async regretEvent(type: string, loc: string) {
-    const tid = trailOpen(this, { kind: 'choice', title: '前世遗憾', loc });
+    const tid = trailOpen(this, { kind: 'choice', title: '前世遗憾', loc, past: [`regret:${type}`] });
     try {
       await this.regret0(type, loc);
     } finally {
@@ -2206,6 +2207,7 @@ export class Game {
     if (reg) {
       M.regrets.unshift(reg);
       M.regrets = M.regrets.slice(0, 2);
+      trailRef(this, `regret:${reg.type}`);
       await this.choose({ title: '前世遗憾', text: reg.text, options: [{ label: '记下' }], style: 'well' });
     }
 

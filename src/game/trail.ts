@@ -7,6 +7,10 @@
 //   引发 一件事当场引出的另一件事（抉择里打起来的仗、了结时的收获）
 //   余波 几圈之后兑现的余波
 //   旧事 某圈做过的事，在下个岁首长成的后果格
+//   前世 跨世的牵连：故人、遗泽、伙伴、前世遗憾、宿敌、家族、签到碑
+//
+// 跨世连线靠轮回数据里的 trailRefs：某件事会在后世回来时，先把「它在第几世的哪个节点」记下，
+// 后世开节点时按同一个键连回去。最近 8 世的图谱留在轮回数据里，供「轮回」长卷复盘。
 import type { Game } from './engine';
 import type { LifeState, MetaState, TrailKind, TrailLink, TrailNode, TrailState } from './types';
 import type { LifeEvent } from '../data/events';
@@ -14,6 +18,9 @@ import { LOC_BY_ID } from '../data/events';
 import { ATTR_NAMES, AttrKey, REALMS } from '../data/core';
 
 const MAX_NODES = 400;
+const MAX_PAST = 8;
+// 这些线索跨世延续：同一个键在后世再出现，就连回前世那一拍
+export const CROSS_THREAD = /^(bond|acq|legacy):/;
 const MAX_LINES = 6;
 
 // 这些世内标记只是记账，不算「因」
@@ -77,10 +84,26 @@ function snap(g: Game): Snap {
   };
 }
 
-function addLink(n: TrailNode, from: number | undefined, why: TrailLink['why']) {
-  if (from == null || from === n.id || from > n.id) return;
-  if (n.links.some((l) => l.from === from)) return;
+function addLink(n: TrailNode, from: number | undefined, why: TrailLink['why'], life?: number) {
+  if (from == null) return;
+  if (life != null) {
+    if (!n.links.some((l) => l.from === from && l.life === life)) n.links.push({ from, why, life });
+    return;
+  }
+  if (from === n.id || from > n.id) return;
+  if (n.links.some((l) => l.from === from && l.life == null)) return;
   n.links.push({ from, why });
+}
+
+// 最近的节点（当前打开的，没有就是最后一个）
+export function trailHere(g: Game): number | undefined {
+  return trailTop(g) ?? g.L?.trail?.nodes[g.L.trail.nodes.length - 1]?.id;
+}
+
+// 记下「这件事会在后世回来」：键 → 本世的某个节点
+export function trailRef(g: Game, key: string, id = trailHere(g)) {
+  if (id == null || !g.L) return;
+  (g.M.trailRefs ??= {})[key] = { life: g.L.lifeNo, id };
 }
 
 export interface OpenInfo {
@@ -93,6 +116,7 @@ export interface OpenInfo {
   beat?: string;
   ev?: LifeEvent; // 用来找「因」：重放它的出现条件，看读了哪些标记
   flags?: string[]; // 直接写明会读的标记（因果链的拍）
+  past?: string[]; // 连回前世的键（trailRefs）
 }
 
 // 开一个节点；返回 id，结束时交给 trailClose
@@ -116,7 +140,14 @@ export function trailOpen(g: Game, info: OpenInfo): number {
   };
   if (st.length) addLink(n, st[st.length - 1].id, '引发');
   if (info.thread) addLink(n, T.last[info.thread], '承');
-  for (const l of pending.get(g) ?? []) addLink(n, l.from, l.why);
+  // 跨世：同一条线索这一世头一回出现，连回前世最后一拍；以及写明的前世牵连
+  const refs = g.M.trailRefs ?? {};
+  const past = [...(info.past ?? []), ...(info.thread && CROSS_THREAD.test(info.thread) && T.last[info.thread] == null ? [info.thread] : [])];
+  for (const k of past) {
+    const r = refs[k];
+    if (r && r.life !== L.lifeNo) addLink(n, r.id, '前世', r.life);
+  }
+  for (const l of pending.get(g) ?? []) addLink(n, l.from, l.why, l.life);
   pending.delete(g);
   if (info.ev) for (const k of flagsRead(g, info.ev)) addLink(n, T.flagSrc[k], '因');
   for (const k of info.flags ?? []) if (k in L.flags) addLink(n, T.flagSrc[k], '因');
@@ -164,10 +195,10 @@ export function trailMark(g: Game, info: OpenInfo & { chips?: string[]; from?: n
 }
 
 // 下一个打开的节点要连到 from（后果格、余波用）
-export function trailHint(g: Game, from: number | undefined, why: TrailLink['why']) {
+export function trailHint(g: Game, from: number | undefined, why: TrailLink['why'], life?: number) {
   if (from == null) return;
   const arr = pending.get(g) ?? [];
-  arr.push({ from, why });
+  arr.push({ from, why, life });
   pending.set(g, arr);
 }
 
@@ -224,10 +255,28 @@ export function trailLine(g: Game, text: string) {
   n.lines.push(t);
 }
 
-// 死后：这一世的图谱留到下一世结束，供复盘
+// 死后：这一世的图谱存进轮回数据（最近 8 世），跨世线索的最后一拍记进 trailRefs
 export function trailArchive(M: MetaState, L: LifeState) {
+  trailMigrate(M);
   if (!L.trail?.nodes.length) return;
-  M.lastTrail = { life: L.lifeNo, era: L.era, nodes: L.trail.nodes };
+  const nodes = L.trail.nodes;
+  const last = nodes[nodes.length - 1];
+  const refs = (M.trailRefs ??= {});
+  for (const [k, id] of Object.entries(L.trail.last)) if (CROSS_THREAD.test(k)) refs[k] = { life: L.lifeNo, id };
+  const past = (M.pastTrails ??= []).filter((x) => x.life !== L.lifeNo);
+  past.unshift({ life: L.lifeNo, era: L.era, age: L.age, end: last?.kind === 'death' ? last.title : undefined, nodes });
+  M.pastTrails = past.slice(0, MAX_PAST);
+  // 已经不在册的前世，牵连也不必再记
+  const keep = new Set(M.pastTrails.map((x) => x.life));
+  for (const [k, r] of Object.entries(refs)) if (!keep.has(r.life) && r.life !== L.lifeNo) delete refs[k];
+}
+
+// 旧存档只有上一世的 lastTrail
+export function trailMigrate(M: MetaState) {
+  if (!M.lastTrail) return;
+  const lt = M.lastTrail;
+  delete M.lastTrail;
+  if (!(M.pastTrails ??= []).some((x) => x.life === lt.life)) M.pastTrails.push({ life: lt.life, era: lt.era, nodes: lt.nodes });
 }
 
 // 重放事件的出现条件和选项条件，记下读到了哪些已有的标记
@@ -316,6 +365,7 @@ export const TRAIL_KIND_NAMES: Record<TrailKind, string> = {
   wish: '心愿',
   ruin: '遗迹',
   death: '终局',
+  hold: '产业',
 };
 
 export const locName = (loc?: string) => (loc ? LOC_BY_ID[loc]?.name ?? '' : '');
