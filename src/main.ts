@@ -5,6 +5,7 @@ import { BEAT_LABELS, CHAIN_BY_ID, activeChains } from './game/chains';
 import { RollAction, RollView, autoAgain, autoDie, autoNudge, faceName, tileSceneLoc } from './game/board';
 import { HOLDINGS } from './data/board';
 import { loadLife, loadMeta, resetAll, saveMeta, lampOf } from './game/meta';
+import { OFFER_KEY, PRESETS, SLOT_COUNT, SaveFile, applySave, currentSave, deleteSlot, fetchPreset, fileName, hasProgress, readSlot, stamp, summary, validate, writeSlot } from './game/saves';
 import { runBattle } from './battle/view';
 import { openBag } from './bag';
 import { openTrail } from './trail-view';
@@ -892,6 +893,140 @@ function showSettings() {
   };
 }
 
+
+// ---------------- 存档 ----------------
+function loadAndReload(f: SaveFile, backup = true) {
+  const err = applySave(f, backup);
+  if (err) return alert(err);
+  location.reload();
+}
+
+function downloadSave(f: SaveFile) {
+  const blob = new Blob([JSON.stringify(f)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = fileName(f);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+const OVERWRITE = '读档后当前进度会先自动备份到「自动备份」，再换成这份。确定？';
+
+function showSaves() {
+  const cur = currentSave();
+  const slotRow = (n: number | 'backup', f: SaveFile | null) => {
+    const label = n === 'backup' ? '自动备份' : `档位 ${n}`;
+    const body = f ? `<b>${label} · ${esc(f.name)}</b><span>${esc(summary(f))}</span><small>${stamp(f.savedAt)}</small>` : `<b>${label}</b><span class="muted">空</span>`;
+    const btns =
+      (n !== 'backup' ? `<button class="btn sm" data-save="${n}" ${hasProgress(cur) ? '' : 'disabled'}>存到这里</button>` : '') +
+      `<button class="btn sm" data-load="${n}" ${f ? '' : 'disabled'}>读取</button>` +
+      `<button class="btn sm" data-exp="${n}" ${f ? '' : 'disabled'}>导出</button>` +
+      `<button class="btn sm danger" data-del="${n}" ${f ? '' : 'disabled'}>删除</button>`;
+    return `<div class="save-slot ${f ? '' : 'empty'}"><div class="save-info">${body}</div><div class="save-btns">${btns}</div></div>`;
+  };
+  const slots = Array.from({ length: SLOT_COUNT }, (_, i) => slotRow(i + 1, readSlot(i + 1))).join('');
+  const backup = readSlot('backup');
+  const presets = PRESETS.map((p) => `<div class="save-slot"><div class="save-info"><b>${esc(p.name)}</b><span>${esc(p.desc)}</span></div><div class="save-btns"><button class="btn sm primary" data-preset="${p.id}">载入</button></div></div>`).join('');
+  // 独立浮层：抉择弹窗开着时也能存读档，关掉后原来的弹窗还在
+  document.querySelector('.saves-root')?.remove();
+  togglePanel(false);
+  const root = document.createElement('div');
+  root.className = 'modal-root show saves-root';
+  root.innerHTML = `<div class="modal wide"><div class="modal-box"><h2>存档</h2>
+    <h3>当前进度</h3>
+    <div class="save-slot cur"><div class="save-info"><b>${esc(cur.name)}</b><span>${esc(summary(cur))}</span><small>每年岁末自动记下，刷新页面从这里接着玩</small></div><div class="save-btns"><button class="btn sm" data-exp="cur" ${hasProgress(cur) ? '' : 'disabled'}>导出</button></div></div>
+    <h3>手动档位</h3><p class="muted">「存到这里」记的是最近一个岁末的进度。读档前，当前进度会先放进「自动备份」，读错了还能读回来。</p>
+    <div class="save-list">${slots}${backup ? slotRow('backup', backup) : ''}</div>
+    <h3>预置存档</h3><div class="save-list">${presets}</div>
+    <div class="row"><button class="btn" data-import>从文件导入</button><button class="btn primary" data-ok>关闭</button></div>
+    <input type="file" accept=".json,application/json" hidden data-file></div></div>`;
+  document.body.appendChild(root);
+  const box = root.querySelector('.modal-box') as HTMLElement;
+  const close = () => root.remove();
+  root.querySelector('.modal')!.addEventListener('click', (e) => e.target === e.currentTarget && close());
+  const slotOf = (v: string) => (v === 'backup' ? 'backup' : Number(v));
+  box.querySelectorAll<HTMLButtonElement>('[data-save]').forEach((b) => (b.onclick = () => {
+    const n = Number(b.dataset.save);
+    const old = readSlot(n);
+    if (old && !confirm(`档位 ${n} 已有「${old.name}」，覆盖它？`)) return;
+    const err = writeSlot(n, currentSave());
+    if (err) return alert(err);
+    showSaves();
+  }));
+  box.querySelectorAll<HTMLButtonElement>('[data-load]').forEach((b) => (b.onclick = () => {
+    const f = readSlot(slotOf(b.dataset.load!));
+    if (!f) return;
+    // 读「自动备份」本身时不再备份，免得把它盖掉
+    if (b.dataset.load === 'backup') {
+      if (confirm('读回自动备份？当前进度会被换掉（不再另做备份）。')) loadAndReload(f, false);
+    } else if (!hasProgress(cur) || confirm(OVERWRITE)) loadAndReload(f);
+  }));
+  box.querySelectorAll<HTMLButtonElement>('[data-exp]').forEach((b) => (b.onclick = () => {
+    const f = b.dataset.exp === 'cur' ? currentSave() : readSlot(slotOf(b.dataset.exp!));
+    if (f) downloadSave(f);
+  }));
+  box.querySelectorAll<HTMLButtonElement>('[data-del]').forEach((b) => (b.onclick = () => {
+    const n = slotOf(b.dataset.del!);
+    if (confirm(`删除${n === 'backup' ? '自动备份' : `档位 ${n}`}？`)) {
+      deleteSlot(n);
+      showSaves();
+    }
+  }));
+  box.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach((b) => (b.onclick = async () => {
+    const p = PRESETS.find((x) => x.id === b.dataset.preset)!;
+    if (hasProgress(cur) && !confirm(OVERWRITE)) return;
+    b.disabled = true;
+    b.textContent = '载入中';
+    try {
+      loadAndReload(await fetchPreset(p));
+    } catch (e) {
+      alert((e as Error).message);
+      b.disabled = false;
+      b.textContent = '载入';
+    }
+  }));
+  const fileEl = box.querySelector('[data-file]') as HTMLInputElement;
+  (box.querySelector('[data-import]') as HTMLButtonElement).onclick = () => fileEl.click();
+  fileEl.onchange = async () => {
+    const file = fileEl.files?.[0];
+    if (!file) return;
+    let f: SaveFile | null = null;
+    try {
+      f = validate(JSON.parse(await file.text()));
+    } catch {
+      f = null;
+    }
+    if (!f) return alert('这个文件不是本游戏导出的存档。');
+    if (!hasProgress(cur) || confirm(`导入「${f.name}」（${summary(f)}）？\n${OVERWRITE}`)) loadAndReload(f);
+  };
+  (box.querySelector('[data-ok]') as HTMLButtonElement).onclick = close;
+}
+
+// 第一次打开带存档系统的版本：问一次要不要载入预置的二十世存档
+async function offerPreset() {
+  try {
+    if (localStorage.getItem(OFFER_KEY)) return;
+    localStorage.setItem(OFFER_KEY, '1');
+  } catch {
+    return;
+  }
+  const cur = currentSave();
+  const p = PRESETS[0];
+  const text = hasProgress(cur)
+    ? `新加了存档系统（顶栏「存档」）：三个手动档位，能导出导入。\n\n附带一份${p.name}：${p.desc}\n\n要现在载入吗？你现在的进度（${summary(cur)}）会先放进「自动备份」，随时能读回来。`
+    : `新加了存档系统（顶栏「存档」）。\n\n附带一份${p.name}：${p.desc}\n\n要直接从第二十一世玩起吗？`;
+  const i = await choose({ title: '存档', text, options: [{ label: `载入${p.name}` }, { label: hasProgress(cur) ? '不了，接着玩我的' : '不了，从第一世开始' }], style: 'well' });
+  if (i !== 0) return;
+  try {
+    loadAndReload(await fetchPreset(p));
+    await new Promise(() => {}); // 等刷新
+  } catch (e) {
+    alert((e as Error).message);
+  }
+}
+
 document.querySelectorAll<HTMLButtonElement>('[data-open]').forEach((b) => {
   b.onclick = () => {
     if (battleEl.classList.contains('show')) return;
@@ -902,6 +1037,8 @@ document.querySelectorAll<HTMLButtonElement>('[data-open]').forEach((b) => {
     }
     // 经历图谱也是独立浮层：结算时也能复盘
     if (b.dataset.open === 'trail') return showTrail();
+    // 存档也是独立浮层：随时能存读
+    if (b.dataset.open === 'saves') return showSaves();
     if (modalEl.classList.contains('show')) return;
     if (b.dataset.open === 'panel') return togglePanel();
     togglePanel(false);
@@ -937,6 +1074,7 @@ async function main() {
   const nextWish = (meta as typeof meta & { nextWish?: string | null }).nextWish;
   if (nextWish) game.pendingWish = nextWish;
   refresh();
+  await offerPreset();
   const saved = loadLife();
   if (saved) {
     const i = await choose({ title: '续档', text: `你还有一世没有过完：第 ${saved.lifeNo} 世，${cnAge(saved.age)}岁。`, options: [{ label: '继续这一世' }, { label: '放弃，重新入世' }], style: 'well' });
