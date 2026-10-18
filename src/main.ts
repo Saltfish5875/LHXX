@@ -21,6 +21,7 @@ import { Scene } from './art/scene';
 import { moment, momentsIdle, setMomentSpeed } from './art/moments';
 import { sfx, setSound, soundOn } from './art/sound';
 import { Chip, clearOutcome, showOutcome, stampCard, stampOption, sweep } from './art/feedback';
+import { boardBackdrop, boardGeometry, tileGraphic, tilePosition } from './art/board';
 
 const $ = (id: string) => document.getElementById(id)!;
 const scrollEl = $('scroll');
@@ -209,16 +210,6 @@ const ATTR_DESC: Record<AttrKey, string> = { gen: '寿元、气血、凡间存�
 
 // ---------------- 命途棋盘 ----------------
 const TAG_CLASS: Record<string, string> = { 劫: 'tag-jie', 缘: 'tag-yuan', 凶: 'tag-xiong', 平: 'tag-ping', 引: 'tag-yin', 故: 'tag-gu' };
-// 一圈格子绕成方环：左上角是岁首，顺时针。12/16/20/24 格 = 4/5/6/7 宫
-function ringOf(n: number): [number, number][] {
-  const k = n / 4 + 1;
-  const out: [number, number][] = [];
-  for (let c = 1; c <= k; c++) out.push([1, c]);
-  for (let r = 2; r <= k; r++) out.push([r, k]);
-  for (let c = k - 1; c >= 1; c--) out.push([k, c]);
-  for (let r = k - 1; r >= 2; r--) out.push([r, 1]);
-  return out;
-}
 // 骰面：九宫格里的点位，一点、四点用朱红（民间骰子的样子）
 const PIP_POS: Record<number, number[]> = { 1: [5], 2: [3, 7], 3: [3, 5, 7], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
 function dieFace(f: number): string {
@@ -231,15 +222,14 @@ const BAG_KEYS = new Set(['battlePrep', 'retreat', 'market', 'gongSwap']);
 let lastRollAct: RollAction['action'] | null = null;
 // 上一次落子的格子与结算出来的简略结果（下一次摆盘时冒在那一格上）
 let landed: { life: number; size: number; slot: number; tip?: { chips: Chip[]; caption: string | null } } | null = null;
-function tileTip(v: RollView, ring: [number, number][]): string {
+function tileTip(v: RollView): string {
   const l = landed;
   if (!l || l.life !== game.L.lifeNo || l.size !== v.size || !l.tip || l.slot >= v.size) return '';
   const { chips, caption } = l.tip;
   l.tip = undefined;
   const body = chips.length ? chips.map((c) => `<span class="${c.tone}">${esc(c.text)}</span>`).join('') : caption ? `<span class="neutral">${esc(caption.length > 9 ? caption.slice(0, 8) + '…' : caption)}</span>` : '';
   if (!body) return '';
-  const [r, c] = ring[l.slot];
-  return `<div class="tile-tip${r === 1 ? ' below' : ''}" style="grid-area:${r}/${c};animation-delay:-{D}ms">${body}</div>`;
+  return `<div class="tile-tip" style="${tilePosition(v.size, l.slot).tipStyle};animation-delay:-{D}ms"><div class="tile-tip-body">${body}</div></div>`;
 }
 let shownDice = '';
 
@@ -263,11 +253,11 @@ async function roll(v: RollView): Promise<RollAction> {
     let going = false;
     let tumbling = false;
     const n = v.size;
-    const ring = ringOf(n);
-    const k = n / 4 + 1;
+    const geometry = boardGeometry(n);
+    const k = geometry.side;
     const targetName = (slot: number) => (slot >= n ? '过岁首' : slot === v.pos ? '原地' : v.tiles[slot].name);
     const ruyiTargets = [1, 2, 3, 4, 5, 6].map((d) => Math.min(n, v.pos + d));
-    const tip = tileTip(v, ring);
+    const tip = tileTip(v);
     const tip0 = performance.now();
     // 小结果停留约 2.6 秒；期间重绘（掷骰、点格）接着原来的进度淡出
     const tipHtml = () => {
@@ -284,14 +274,17 @@ async function roll(v: RollView): Promise<RollAction> {
         <button class="again-btn" data-a="reroll" ${v.again <= 0 ? 'disabled' : ''}>${v.again > 0 ? `再摇一次<small>本世还剩 ${v.again} 次</small>` : '再摇用尽<small>事件可得</small>'}</button>`;
     };
     const render = () => {
+      const mapScroll = dealEl.querySelector('.board-viewport')?.scrollLeft ?? 0;
+      const activeTile = document.activeElement?.closest<HTMLButtonElement>('.tile')?.dataset.s;
       const targets = ruyiMode ? ruyiTargets : rolled ? v.targets : [];
       const info = focus !== null ? v.tiles[focus] : null;
       dealEl.innerHTML = `
-        <div class="board s${k}${v.gathered ? ' gathered' : ''}${peekMode ? ' peeking' : ''}" style="--k:${k}">
-          ${tipHtml()}
+        <div class="board s${k}${v.gathered ? ' gathered' : ''}${peekMode ? ' peeking' : ''}" style="--k:${k};--map-ratio:${geometry.ratio}">
+          <div class="board-heading"><b>命途棋盘</b><span>${esc(v.stageName)} · ${n} 格</span><span class="board-guide">顺时针行进 · 点地块查看</span></div>
+          <div class="board-viewport"><div class="board-map" role="group" aria-label="${esc(v.stageName)}命途棋盘，${n}格，顺时针行进">
+          ${boardBackdrop(n, esc(v.stageName))}
           ${v.tiles
             .map((t) => {
-              const [r, c] = ring[t.slot];
               const cls = [
                 'tile',
                 `k-${t.kind}`,
@@ -301,20 +294,25 @@ async function roll(v: RollView): Promise<RollAction> {
                 t.visited && t.slot !== v.pos ? 'visited' : '',
                 peekMode && t.canPeek ? 'peekable' : '',
                 t.peek ? 'peeked' : '',
+                focus === t.slot ? 'focused' : '',
+                targets.some((target) => t.slot > v.pos && t.slot < Math.min(target, n)) ? 'in-path' : '',
               ].filter(Boolean).join(' ');
-              return `<button class="${cls}" data-s="${t.slot}" style="grid-area:${r}/${c}">
-                <span class="t-month">${t.month}</span>
-                <span class="t-icon">${esc(t.icon)}</span>
+              const description = [t.month, t.name, t.tag && t.tag !== '平' ? t.tag : '', t.lv ? `${t.lv}级` : '', t.slot === v.pos ? '当前位置' : '', targets.includes(t.slot) ? '可前往' : '', t.peek ? '窥得：' + t.peek : t.hint].filter(Boolean).join('，');
+              return `<button class="${cls}" data-s="${t.slot}" style="${tilePosition(n, t.slot).style}" aria-label="${esc(description)}" aria-pressed="${focus === t.slot}" ${t.slot === v.pos ? 'aria-current="location"' : ''} title="${esc(description)}">
+                ${tileGraphic(t, v.stage)}
+                <span class="t-month">${esc(t.month)}</span>
                 <span class="t-name">${esc(t.name)}</span>
                 ${t.tag && t.tag !== '平' ? `<span class="t-tag">${t.tag}</span>` : ''}
                 ${t.lv ? `<span class="t-lv">${t.lv}</span>` : ''}
-                ${t.slot === v.pos ? '<i class="t-me">你</i>' : ''}
               </button>`;
             })
             .join('')}
+          ${tipHtml()}
+          </div></div>
           <div class="board-center">
+            <div class="board-reading">
             <div class="sign${v.gathered ? ' gathered' : ''}"><span>${esc(v.sign)}</span></div>
-            <div class="b-info">${
+            <div class="b-info" role="status" aria-live="polite">${
               info
                 ? `<b>${esc(info.name)}</b> ${esc(info.peek ? '窥得：' + info.peek : info.hint)}`
                 : peekMode
@@ -323,7 +321,7 @@ async function roll(v: RollView): Promise<RollAction> {
                     ? '如意骰：任选点数'
                     : `${v.stageName} · 第 ${v.lap + 1} 圈 · 一圈 ${v.years} 年 · 已停 ${v.stops}/${v.maxStops}`
             }</div>
-            <div class="dice">${diceHtml()}</div>
+            </div><div class="dice">${diceHtml()}</div>
           </div>
         </div>
         <div class="deal-actions">
@@ -334,6 +332,9 @@ async function roll(v: RollView): Promise<RollAction> {
           <label class="btn chk"><input type="checkbox" data-a="autoroll" ${meta.settings.autoRoll ? 'checked' : ''}>自动摇</label>
           <button class="btn ${auto ? 'active' : ''}" data-a="auto">${auto ? '自动中' : '自动'}（${TEND_NAMES[meta.settings.tendency]}）</button>
         </div>`;
+      const viewport = dealEl.querySelector('.board-viewport');
+      if (viewport) viewport.scrollLeft = mapScroll;
+      if (activeTile !== undefined) dealEl.querySelector<HTMLButtonElement>(`.tile[data-s="${activeTile}"]`)?.focus({ preventScroll: true });
       dealEl.querySelectorAll<HTMLButtonElement>('.tile').forEach((b) => (b.onclick = () => tapTile(Number(b.dataset.s))));
       dealEl.querySelectorAll<HTMLButtonElement>('.die-btn[data-d]').forEach((b) => (b.onclick = () => go(Number(b.dataset.d))));
       dealEl.querySelectorAll<HTMLButtonElement>('.die-btn[data-r]').forEach((b) => (b.onclick = () => go(-1, Number(b.dataset.r))));
@@ -422,8 +423,9 @@ async function roll(v: RollView): Promise<RollAction> {
       const tiles = [...dealEl.querySelectorAll<HTMLButtonElement>('.tile')];
       const step = auto ? 50 / meta.settings.speed : 110;
       for (let s = v.pos + 1; s <= Math.min(to, n - 1); s++) {
-        tiles.forEach((el) => el.classList.remove('here'));
+        tiles.forEach((el) => { el.classList.remove('here'); el.removeAttribute('aria-current'); });
         tiles[s]?.classList.add('here', 'passing');
+        tiles[s]?.setAttribute('aria-current', 'location');
         await sleep(step);
       }
       const act: RollAction = ruyi ? { action: 'ruyi', value: ruyi } : { action: 'go', die };
@@ -439,6 +441,8 @@ async function roll(v: RollView): Promise<RollAction> {
     };
     const onKey = (e: KeyboardEvent) => {
       if (modalEl.classList.contains('show') || battleEl.classList.contains('show')) return;
+      const control = e.target instanceof Element ? e.target.closest('button, input, select, textarea, a, [contenteditable="true"]') : null;
+      if (control && (control.matches('input, select, textarea, [contenteditable="true"]') || e.key === 'Enter' || e.key === ' ')) return;
       if ((e.key === ' ' || e.key === 'Enter') && !rolled) {
         e.preventDefault();
         void tumble();

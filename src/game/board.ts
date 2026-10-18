@@ -34,6 +34,7 @@ export interface TileView {
   peek?: string;
   visited: boolean;
   loc?: string;
+  variant?: string; // 本命 / 产业 / 后果 / 歧路的图形变体，不依赖显示名称
   canPeek: boolean;
 }
 export interface RollView {
@@ -501,7 +502,8 @@ export async function boardLap(g: Game) {
       if (!t || !canPeek(g, t)) continue;
       g.rerolls -= 1;
       L.rerollsUsed += 1;
-      t.peeked = g.pickEvent(cardOf(t))?.id ?? 'nothing';
+      const event = g.pickEvent(cardOf(t));
+      t.peeked = event?.ev?.id ?? event?.id ?? 'nothing';
       continue;
     }
     let face: number;
@@ -1184,6 +1186,7 @@ function tileView(g: Game, t: Tile): TileView {
     peek,
     visited: L.board!.visited.includes(t.slot),
     loc: t.loc,
+    variant: t.kind === 'fate' ? L.fate ?? 'fangu' : t.kind === 'hold' ? holdingAt(L, t.slot)?.type : t.ref,
     canPeek: canPeek(g, t),
   };
 }

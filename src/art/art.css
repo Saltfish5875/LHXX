@@ -1209,259 +1209,198 @@ body {
   }
 }
 
-/* ================= 命途棋盘 ================= */
+/* ================= 命途棋盘：青绿微缩山水 ================= */
+.scroll-wrap:has(.board) { overflow-y: auto; scrollbar-width: thin; }
+.scroll-wrap:has(.board) > .scene { height: clamp(110px, 20dvh, 210px); }
+.scroll-wrap:has(.board) > .scroll { min-height: 76px; }
+.deal:has(.board) { flex-shrink: 0; }
 .board {
   --k: 4;
-  display: grid;
-  grid-template-columns: repeat(var(--k), minmax(0, 1fr));
-  grid-template-rows: repeat(var(--k), auto);
-  gap: 6px;
-  max-width: 600px;
+  max-width: 820px;
   margin: 0 auto;
 }
-.board.s5,
-.board.s6,
-.board.s7 {
-  max-width: 720px;
-}
-/* 大棋盘在电脑上也压一压格高，别把卷面挤没了 */
-.board.s6,
-.board.s7 {
-  gap: 4px;
-}
-.board.s6 .tile,
-.board.s7 .tile {
-  min-height: 46px;
-  padding: 10px 2px 2px;
-}
-.board.s6 .t-icon,
-.board.s7 .t-icon {
-  font-size: 18px;
-}
-.tile {
-  position: relative;
-  min-width: 0;
-  min-height: 58px;
+.board-heading {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  padding: 11px 4px 4px;
-  border: 1px solid rgba(28, 35, 44, 0.24);
-  border-radius: 4px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0)),
-    var(--paper-tex),
-    #f8fbfc;
-  color: var(--ink);
-  font-family: var(--serif);
-  cursor: pointer;
-  overflow: hidden;
-  transition: box-shadow 0.15s, opacity 0.2s, transform 0.12s;
-  animation: cardIn 0.36s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
-}
-.tile:active {
-  transform: scale(0.97);
-}
-.t-month {
-  position: absolute;
-  top: 2px;
-  left: 4px;
-  font-size: 10px;
+  align-items: baseline;
+  gap: 12px;
+  padding: 0 4px 5px;
+  border-bottom: 1px solid rgba(91, 126, 129, .15);
   color: var(--ink-2);
-  opacity: 0.8;
+  font-size: 11px;
 }
-.t-icon {
+.board-heading b {
+  font-family: var(--brush);
+  font-size: 19px;
+  font-weight: 400;
+  color: #3c666e;
+  letter-spacing: 2px;
+}
+.board-guide { margin-left: auto; opacity: .8; }
+.board-viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #abc3bd transparent;
+  background: radial-gradient(ellipse at 50% 58%, rgba(143, 184, 173, .16), transparent 65%);
+}
+.board-map {
+  position: relative;
+  isolation: isolate;
+  width: min(100%, calc(38dvh * var(--map-ratio)));
+  aspect-ratio: var(--map-ratio);
+  margin: 0 auto;
+  container-type: inline-size;
+}
+.board-landscape { position: absolute; width: 100%; height: 100%; pointer-events: none; }
+.map-name {
+  text-anchor: middle;
   font-family: var(--brush);
   font-size: 22px;
-  line-height: 1.1;
-  color: var(--ink);
+  fill: #729b96;
+  letter-spacing: 5px;
 }
+.map-caption { text-anchor: middle; font-family: var(--serif); font-size: 8px; fill: #7b9995; }
+.tile {
+  --ground: #dce5cf;
+  --edge-left: #b2c6b2;
+  --edge-right: #92ae9e;
+  --rim: #a1b6a5;
+  position: absolute;
+  display: block;
+  aspect-ratio: 120 / 154;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: #345e61;
+  font-family: var(--serif);
+  cursor: pointer;
+  pointer-events: none;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  transition: opacity .2s;
+}
+.tile-art { display: block; width: 100%; height: auto; overflow: visible; pointer-events: none; }
+.tile-hit, .tile-prop { pointer-events: visiblePainted; }
+.tile:disabled .tile-hit, .tile:disabled .tile-prop { pointer-events: none; }
+.tile-shadow { fill: #4d7772; opacity: .12; }
+.tile-ground { fill: var(--ground); stroke: var(--rim); stroke-width: 1; transition: fill .2s, stroke .2s; }
+.tile-edge-left { fill: var(--edge-left); }
+.tile-edge-right { fill: var(--edge-right); }
+.tile-inset { fill: none; stroke: #f6f6df; stroke-opacity: .55; stroke-width: .8; pointer-events: none; }
+.tile-prop { transition: transform .18s; transform-origin: 60px 98px; }
+.tile:hover .tile-prop, .tile:focus-visible .tile-prop { transform: translateY(-4px); }
+.tile:hover .tile-ground, .tile:focus-visible .tile-ground, .tile.focused .tile-ground { stroke: #517f80; stroke-width: 2.5; fill: #e8ecd4; }
+.tile:focus-visible .tile-inset { stroke: #3c727e; stroke-width: 2; stroke-dasharray: 3 2; }
 .t-name {
-  font-size: 12px;
-  max-width: 100%;
+  position: absolute;
+  top: 70%;
+  left: 15%;
+  width: 70%;
+  text-align: center;
+  font-size: clamp(10px, 2.4cqw, 13px);
+  line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: 0 1px 2px #f5f3de, 0 0 3px #f5f3de;
+}
+.t-month {
+  position: absolute;
+  top: 89%;
+  left: 30%;
+  width: 40%;
+  text-align: center;
+  font-size: clamp(8px, 1.8cqw, 10px);
+  line-height: 1.2;
+  color: #6b8984;
 }
 .t-tag {
   position: absolute;
-  top: 2px;
-  right: 3px;
-  font-family: var(--brush);
-  font-size: 12px;
-  line-height: 16px;
-  padding: 0 4px;
+  top: 16%;
+  right: 2%;
+  width: 14px;
+  height: 16px;
   border-radius: 2px;
-  color: #ebf1f4;
-  background: #6f8590;
+  background: #6f9381;
+  color: #fff8e4;
+  font-family: var(--brush);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
   transform: rotate(-4deg);
-}
-.tag-jie .t-tag {
-  background: var(--red);
-}
-.tag-jie .t-icon {
-  color: var(--red);
-}
-.tag-yuan .t-tag {
-  background: var(--green);
-}
-.tag-yuan .t-icon {
-  color: #2f6e5c;
-}
-.tag-xiong .t-tag {
-  background: var(--ink);
-}
-.tag-yin .t-tag {
-  background: var(--gold);
-}
-.tag-yin .t-icon {
-  color: var(--gold);
-}
-.tag-gu .t-tag {
-  background: var(--purple);
-}
-.tag-gu .t-icon {
-  color: var(--purple);
 }
 .t-lv {
   position: absolute;
-  bottom: 2px;
-  right: 4px;
-  font-size: 11px;
-  font-family: var(--brush);
-  color: var(--gold);
-}
-.t-me {
-  position: absolute;
-  bottom: 3px;
-  left: 3px;
-  font-style: normal;
-  font-family: var(--brush);
-  font-size: 11px;
-  line-height: 15px;
-  padding: 0 3px;
-  border-radius: 2px;
-  background: var(--red);
-  color: #ebf1f4;
-}
-/* 四角与特殊格 */
-.tile.k-start {
-  background: linear-gradient(180deg, rgba(169, 195, 200, 0.35), rgba(169, 195, 200, 0.05)), var(--paper-tex), #f3f8fa;
-}
-.tile.k-fate {
-  border-color: rgba(184, 146, 58, 0.6);
-  background: linear-gradient(180deg, rgba(243, 217, 138, 0.3), rgba(243, 217, 138, 0)), var(--paper-tex), #f8fbfc;
-}
-.tile.k-fate .t-icon {
-  color: var(--gold);
-}
-.tile.k-market .t-icon,
-.tile.k-oracle .t-icon {
-  color: var(--blue);
-}
-.tile.k-oracle {
-  background: linear-gradient(180deg, rgba(122, 92, 138, 0.12), rgba(122, 92, 138, 0)), var(--paper-tex), #f8fbfc;
-}
-.tile.k-hold {
-  border-style: dashed;
-  border-color: rgba(63, 138, 140, 0.6);
-}
-.tile.k-hold .t-icon {
-  color: var(--green);
-}
-.tile.k-ruin {
-  border: 1px dashed rgba(184, 146, 58, 0.8);
-  background: linear-gradient(0deg, rgba(184, 146, 58, 0.16), rgba(184, 146, 58, 0)), var(--paper-tex), #f8fbfc;
-}
-.tile.k-ruin .t-icon {
-  color: var(--gold);
-}
-.tile.k-conseq {
-  background: linear-gradient(0deg, rgba(122, 92, 138, 0.14), rgba(122, 92, 138, 0)), var(--paper-tex), #f8fbfc;
-}
-.tile.k-conseq .t-icon {
-  color: var(--purple);
-}
-.tile.k-stray {
-  border-style: dashed;
-}
-.tile.k-dust .t-icon {
-  color: var(--red);
-}
-/* 因果链的「缘」格 */
-.tile.k-chain {
-  border: 1px solid rgba(47, 110, 92, 0.75);
-  background: linear-gradient(0deg, rgba(47, 110, 92, 0.16), rgba(47, 110, 92, 0)), var(--paper-tex), #f8fbfc;
-}
-.tile.k-chain .t-icon {
-  color: #2f6e5c;
-}
-/* 状态 */
-.tile.visited {
-  opacity: 0.5;
-}
-.tile.here {
-  box-shadow: inset 0 0 0 2px var(--red);
-  opacity: 1;
-}
-.tile.target {
-  box-shadow:
-    0 0 0 2px var(--blue),
-    0 6px 14px rgba(46, 110, 142, 0.25);
-  animation:
-    cardIn 0.36s cubic-bezier(0.2, 0.9, 0.3, 1.2) both,
-    tileGlow 1.6s ease-in-out 0.4s infinite;
-}
-.tile.passing {
-  background: rgba(184, 56, 46, 0.08);
-}
-.board.peeking .tile:not(.peekable) {
-  opacity: 0.4;
-}
-.tile.peekable {
-  outline: 2px dashed var(--blue);
-  outline-offset: -5px;
-}
-.tile.peeked .t-name::after {
-  content: '·窥';
-  color: var(--blue);
-}
-@keyframes tileGlow {
-  50% {
-    box-shadow:
-      0 0 0 2px var(--blue),
-      0 8px 20px rgba(46, 110, 142, 0.4);
-  }
-}
-.board.gathered .tile.tag-jie {
-  animation: pulse 1.4s infinite;
-}
-/* 盘心 */
-.board-center {
-  grid-area: 2 / 2 / -2 / -2;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 4px;
+  top: 49%;
+  left: 9%;
+  width: 15px;
+  height: 15px;
+  border: 1px solid #bfaa71;
+  border-radius: 50%;
+  background: #f4ead1;
+  color: #8e773f;
+  font-size: 10px;
+  line-height: 14px;
   text-align: center;
 }
-.board-center .sign {
-  margin: 0;
-  font-size: 15px;
-  justify-content: center;
-  line-height: 1.35;
+.tile.k-start { --ground: #e4dfbd; --edge-left: #c7b991; --edge-right: #b2a47d; }
+.tile.k-fate { --ground: #e9dfbd; --rim: #c7b071; --edge-left: #c9ba8e; --edge-right: #ae9e75; }
+.tile.k-hold { --ground: #d8e2bb; }
+.tile.k-oracle { --ground: #dce4d7; }
+.tile.k-ruin { --ground: #ded8ba; --edge-right: #aa9e81; }
+.tile.k-conseq { --ground: #dcdccf; }
+.tile.k-chain, .tile.tag-yuan { --ground: #d0e4cb; --rim: #86af92; }
+.tile.tag-jie, .tile.tag-xiong { --ground: #d9d6c5; --rim: #bc9d8c; }
+.tile.tag-yin { --ground: #e5dfbe; }
+.tile.tag-gu { --ground: #ded9de; }
+.tag-jie .t-tag { background: #b56655; }
+.tag-xiong .t-tag { background: #5b6574; }
+.tag-yin .t-tag { background: #ac9156; }
+.tag-gu .t-tag { background: #93809f; }
+.tile.visited .tile-art { opacity: .58; }
+.tile.visited .t-name { color: #7f9390; }
+.tile-pawn { opacity: 0; pointer-events: none; }
+.tile.here .tile-pawn { opacity: 1; }
+.tile.here .tile-ground { stroke: #b86553; stroke-width: 2.5; }
+.tile.here .tile-art, .tile.passing .tile-art { opacity: 1; }
+.tile.passing .tile-ground { fill: #eee0be; }
+.tile.target .tile-ground {
+  fill: #d6ebdd;
+  stroke: #3a8893;
+  stroke-width: 3;
+  animation: landGlow 1.6s ease-in-out infinite;
 }
-.board-center .sign > span {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.tile.target .tile-inset { stroke: #efffdb; stroke-width: 2; stroke-opacity: 1; }
+.tile.target .t-name { color: #216b79; font-weight: bold; }
+.route-dot { opacity: 0; fill: #579a9a; }
+.tile.in-path .route-dot { opacity: 1; }
+.board.peeking .tile:not(.peekable) { opacity: .42; }
+.tile.peekable .tile-ground { stroke: #4d8e9b; stroke-width: 2.5; stroke-dasharray: 4 3; }
+.tile.peeked .t-name::after { content: '·窥'; color: var(--blue); }
+.tile.chosen .tile-prop { transform: translateY(-6px); }
+.tile .pick-seal { top: 40%; right: 30%; width: 24px; height: 24px; line-height: 24px; font-size: 18px; }
+.board.gathered .signal-danger { animation: signalPulse 1.4s ease-in-out infinite; }
+@keyframes landGlow { 50% { fill: #ebf3c8; stroke: #70b7af; } }
+@keyframes signalPulse { 50% { opacity: .4; } }
+/* 操作台保持正向，地块详情和骰子在手机上也可直接阅读。 */
+.board-center {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 20px;
+  padding: 9px 12px;
+  margin-top: 2px;
+  border-top: 1px solid rgba(91, 126, 129, .2);
+  background: rgba(250, 252, 246, .65);
+  border-radius: 4px;
 }
+.board-reading { flex: 1; min-width: 0; }
+.board-center .sign { margin: 0 0 4px; font-size: 15px; line-height: 1.35; }
+.board-center .sign > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.board-center .b-info { min-height: 1.35em; }
+.board-center .dice { flex: 0 1 auto; align-items: center; min-height: 52px; }
 .b-info {
   font-size: 12px;
   color: var(--ink-2);
@@ -1696,170 +1635,69 @@ body {
 }
 
 @media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
-  .board {
-    gap: 4px;
-  }
-  .tile {
-    min-height: 52px;
-    padding: 10px 2px 4px;
-  }
-  .t-month {
-    font-size: 9px;
-    top: 1px;
-    left: 3px;
-  }
-  .t-icon {
-    font-size: 19px;
-  }
-  .t-name {
-    font-size: 11px;
-  }
-  .t-tag {
-    font-size: 11px;
-    line-height: 14px;
-    padding: 0 3px;
-  }
-  .board-center {
-    gap: 4px;
-    padding: 2px;
-  }
-  .board-center .sign {
-    font-size: 13px;
-  }
-  .board-center .sign::before {
-    width: 18px;
-    height: 18px;
-    line-height: 18px;
-    font-size: 11px;
-  }
-  .b-info {
-    font-size: 11px;
-  }
-  .dice {
-    gap: 8px;
-    min-height: 54px;
-  }
-  .die {
-    --sz: 38px;
-    padding: 5px;
-  }
-  .die-btn small {
-    font-size: 10px;
-    max-width: 84px;
-  }
-  .die-btn.ruyi small {
-    max-width: 52px;
-  }
-  .die-btn.ruyi .die {
-    --sz: 30px;
-  }
-  .roll-btn {
-    padding: 6px 12px 6px 8px;
-  }
-  .roll-btn .die {
-    --sz: 26px;
-  }
-  /* 大棋盘：格子更小，月份与节气藏起来 */
-  .board.s5 .tile {
-    min-height: 46px;
-  }
-  .board.s6 .tile,
-  .board.s7 .tile {
-    min-height: 40px;
-    padding: 4px 1px 3px;
-  }
-  .board.s6,
-  .board.s7 {
-    gap: 3px;
-  }
-  .board.s6 .t-month,
-  .board.s7 .t-month {
-    display: none;
-  }
-  .board.s6 .t-icon,
-  .board.s7 .t-icon {
-    font-size: 16px;
-  }
-  .board.s7 .t-name {
-    font-size: 10px;
-  }
-  .board.s6 .t-tag,
-  .board.s7 .t-tag {
-    font-size: 10px;
-    line-height: 12px;
-    padding: 0 2px;
-  }
+  .top-actions { flex-shrink: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .board-heading { gap: 8px; font-size: 10px; }
+  .board-heading b { font-size: 17px; }
+  .board-guide { font-size: 9px; }
+  .board-map { width: min(100%, calc(40dvh * var(--map-ratio))); }
+  .board.s6 .board-map, .board.s7 .board-map { min-width: 390px; }
+  .board-center { padding: 8px 4px; gap: 7px; }
+  .board-center .sign { font-size: 12px; }
+  .board-center .sign::before { width: 18px; height: 18px; line-height: 18px; font-size: 11px; }
+  .board-center .b-info { font-size: 11px; }
+  .board-center .dice { min-width: 130px; gap: 6px; }
+  .die { --sz: 36px; padding: 5px; }
+  .die-btn small { font-size: 10px; max-width: 74px; }
+  .die-btn.ruyi small { max-width: 44px; }
+  .die-btn.ruyi .die { --sz: 28px; }
+  .roll-btn { padding: 6px 9px 6px 7px; }
+  .roll-btn .die { --sz: 26px; }
+  .again-btn { padding: 5px 8px; font-size: 14px; }
+  .again-btn small { font-size: 9px; }
+  .t-tag { top: 13%; right: 0; width: 12px; height: 14px; font-size: 10px; line-height: 14px; }
 }
-
-/* 落子小结果：冒在刚停下的那一格上 */
-.board {
-  position: relative;
+@media (max-width: 400px) {
+  .board-guide { max-width: 104px; text-align: right; }
+  .board.s4 .board-map, .board.s5 .board-map { width: 100%; }
 }
+@media (max-height: 700px) {
+  .scroll-wrap:has(.board) > .scene { height: 110px; }
+}
+/* 落子小结果：使用与棋格相同的投影坐标。 */
 .tile-tip {
-  position: relative;
-  z-index: 5;
-  align-self: start;
-  justify-self: center;
+  position: absolute;
+  z-index: 30;
+  pointer-events: none;
+  animation: tipPop 2.6s ease-out both;
+}
+.tile-tip-body {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 2px 4px;
-  max-width: 160%;
-  margin-top: -14px;
-  padding: 3px 7px;
+  width: max-content;
+  max-width: 160px;
+  padding: 4px 8px;
   border-radius: 10px;
-  background: rgba(253, 254, 254, 0.97);
-  border: 1px solid rgba(28, 35, 44, 0.22);
-  box-shadow: 0 4px 12px rgba(40, 50, 63, 0.2);
+  background: rgba(253, 254, 249, .97);
+  border: 1px solid rgba(80, 110, 99, .3);
+  box-shadow: 0 4px 12px rgba(40, 63, 60, .16);
   font-family: var(--serif);
   font-size: 12px;
   line-height: 1.3;
-  white-space: nowrap;
-  pointer-events: none;
-  animation: tipPop 2.6s ease-out both;
+  transform: translate(-50%, -100%);
 }
-.tile-tip.below {
-  align-self: end;
-  margin-top: 0;
-  margin-bottom: -14px;
-}
-.tile-tip .up {
-  color: #2f6e5c;
-}
-.tile-tip .gold {
-  color: var(--gold);
-}
-.tile-tip .down {
-  color: var(--red);
-}
-.tile-tip .neutral {
-  color: var(--ink-2);
-}
+.tile-tip .up { color: #2f6e5c; }
+.tile-tip .gold { color: var(--gold); }
+.tile-tip .down { color: var(--red); }
+.tile-tip .neutral { color: var(--ink-2); }
 @keyframes tipPop {
-  0% {
-    opacity: 0;
-    transform: translateY(8px) scale(0.85);
-  }
-  10% {
-    opacity: 1;
-    transform: translateY(-2px) scale(1.04);
-  }
-  16% {
-    transform: none;
-  }
-  80% {
-    opacity: 1;
-    transform: translateY(-4px);
-  }
-  100% {
-    opacity: 0;
-    transform: translateY(-12px);
-  }
+  0% { opacity: 0; transform: translateY(8px); }
+  12%, 75% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-14px); }
 }
-@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
-  .tile-tip {
-    font-size: 11px;
-    padding: 2px 5px;
-    max-width: 200%;
-  }
+@media (prefers-reduced-motion: reduce) {
+  .tile *, .board .event-signal, .board .roll-btn { animation: none !important; transition: none !important; }
+  .tile-tip { animation: tipFade 2.6s linear both; }
 }
+@keyframes tipFade { 0%, 85% { opacity: 1; } 100% { opacity: 0; } }
