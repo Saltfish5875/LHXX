@@ -1,168 +1,15 @@
 // 劫难战斗画面：云海浮峰的仙境战场（Canvas2D），键盘 WASD / 方向键，触屏拖动
 import { BattleSim, ARENA } from './sim';
 import type { BattleSpec, BattleResult } from './spec';
-import { ERA_LOOK, mix, rgba } from '../art/palette';
+import { rgba } from '../art/palette';
+import { BattleBackdrop } from './background';
 import { sfx } from '../art/sound';
-import { pillarPeak, cloudBank, rng } from '../art/scene';
 import { FUJUE, ITEMS, SK_SHORT } from '../data/cult';
 import type { SkillId } from '../game/types';
 
 const INK = '#1d2a38';
 const BLUE_INK = '#3A6080';
 const PALE = '#98BACE';
-
-let paperPattern: CanvasPattern | null = null;
-
-function makePaper(ctx: CanvasRenderingContext2D) {
-  if (paperPattern) return paperPattern;
-  const c = document.createElement('canvas');
-  c.width = c.height = 256;
-  const g = c.getContext('2d')!;
-  g.fillStyle = '#eef6fa';
-  g.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 30; i++) {
-    g.fillStyle = `rgba(86,109,138,${Math.random() * 0.018})`;
-    g.beginPath();
-    g.ellipse(Math.random() * 256, Math.random() * 256, 10 + Math.random() * 40, 6 + Math.random() * 20, Math.random() * 3, 0, Math.PI * 2);
-    g.fill();
-  }
-  for (let i = 0; i < 900; i++) {
-    g.strokeStyle = `rgba(61,96,116,${Math.random() * 0.035})`;
-    g.lineWidth = Math.random() * 1.2;
-    const x = Math.random() * 256;
-    const y = Math.random() * 256;
-    const a = Math.random() * Math.PI;
-    const l = 4 + Math.random() * 14;
-    g.beginPath();
-    g.moveTo(x, y);
-    g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
-    g.stroke();
-  }
-  paperPattern = ctx.createPattern(c, 'repeat');
-  return paperPattern;
-}
-
-// 远景：云海里的石柱仙峰，年代定色，境界越高越浓。两条横幅预先画好，按视差平移、首尾相接
-const REALM_SAT = [0.7, 0.75, 0.85, 0.92, 1, 1];
-let look = ERA_LOOK.E1;
-let strips: { key: string; far: HTMLCanvasElement; mid: HTMLCanvasElement; H: number } | null = null;
-
-function buildStrip(W: number, H: number, mid: boolean, sat: number, seed: number) {
-  const c = document.createElement('canvas');
-  c.width = W;
-  c.height = H;
-  const g = c.getContext('2d')!;
-  const r = rng(seed);
-  const desat = (col: string, k = 1) => mix(col, '#b4c0c8', (1 - sat) * k);
-  const lit = mid ? desat(look.hills[0]) : mix(desat(look.hills[0]), look.sky[1], 0.5);
-  const dark = mid ? desat(look.hills[1], 0.8) : mix(desat(look.hills[1]), look.sky[1], 0.58);
-  const n = mid ? 6 : 11;
-  const sc = H / 260;
-  // 两端各留一截空隙，平铺时接缝落在云里
-  for (let i = 0; i < n; i++) {
-    const x = W * (0.04 + (i + r() * 0.6) / n * 0.92);
-    const wd = (mid ? 70 + r() * 50 : 30 + r() * 30) * sc;
-    const top = H * (mid ? 0.08 + r() * 0.3 : 0.3 + r() * 0.25);
-    if (mid && r() < 0.6) pillarPeak(g, x + (r() < 0.5 ? -1 : 1) * wd * 0.55, H * 0.98, top + (H - top) * 0.35, wd * 0.6, mix(lit, look.sky[1], 0.2), mix(dark, look.sky[1], 0.2), 0.6, r, { pines: true });
-    pillarPeak(g, x, H * (mid ? 0.98 : 0.86), top, wd, lit, dark, mid ? 0.75 : 0.3, r, { pines: true, fall: mid && r() < 0.6 });
-  }
-  cloudBank(g, W, H * (mid ? 0.93 : 0.8), H * 0.08, sc, r, !!look.night);
-  return c;
-}
-
-function drawMountains(ctx: CanvasRenderingContext2D, w: number, h: number, camX: number, camY: number, realm: number, kind: string) {
-  const sat = REALM_SAT[realm] ?? 0.6;
-  const sky = ctx.createLinearGradient(0, 0, 0, h * 0.55);
-  sky.addColorStop(0, rgba(look.sky[0], 0.95));
-  sky.addColorStop(1, rgba(look.sky[1], 0));
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, w, h * 0.55);
-  const H = Math.round(Math.min(380, h * 0.36));
-  const W = Math.max(1600, Math.round(w * 1.6));
-  const key = `${look.sky[0]}|${realm}|${W}|${H}`;
-  if (!strips || strips.key !== key) {
-    const seed = realm * 977 + W + H;
-    strips = { key, H, far: buildStrip(W, H, false, sat, seed), mid: buildStrip(W, H, true, sat, seed + 1) };
-  }
-  const layers = [
-    { img: strips.far, par: 0.05, bottom: Math.min(0.3, 260 / h) },
-    { img: strips.mid, par: 0.1, bottom: Math.min(0.42, 360 / h) },
-  ];
-  for (const L of layers) {
-    const y = h * L.bottom - camY * L.par * 0.3 - H;
-    let x = -(((camX * L.par) % W) + W) % W;
-    for (; x < w; x += W) ctx.drawImage(L.img, Math.round(x), Math.round(y));
-    // 峰脚以下接一片云海
-    const cy = y + H - 2;
-    const cg = ctx.createLinearGradient(0, cy, 0, cy + 120);
-    cg.addColorStop(0, 'rgba(255,255,255,0.7)');
-    cg.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = cg;
-    ctx.fillRect(0, cy, w, 120);
-  }
-  // 天光
-  const hg = ctx.createRadialGradient(w * 0.75, 0, 4, w * 0.75, 0, h * 0.6);
-  hg.addColorStop(0, look.night ? 'rgba(240,246,250,0.15)' : 'rgba(255,252,236,0.6)');
-  hg.addColorStop(1, 'rgba(255,252,236,0)');
-  ctx.fillStyle = hg;
-  ctx.fillRect(0, 0, w, h * 0.6);
-  // 地面淡淡一层青
-  const gr = ctx.createLinearGradient(0, h * 0.45, 0, h);
-  gr.addColorStop(0, rgba(look.hills[0], 0));
-  gr.addColorStop(1, rgba(mix(look.hills[0], '#d6ece6', 1 - sat), kind === 'trial' ? 0.12 : 0.2));
-  ctx.fillStyle = gr;
-  ctx.fillRect(0, h * 0.45, w, h * 0.55);
-}
-
-// 地上的草石：按格子取种子，跟着镜头走，给移动一个参照
-function drawGround(ctx: CanvasRenderingContext2D, camX: number, camY: number, vw: number, vh: number) {
-  const cell = 90;
-  const x0 = Math.floor((camX - vw) / cell);
-  const x1 = Math.ceil((camX + vw) / cell);
-  const y0 = Math.floor((camY - vh) / cell);
-  const y1 = Math.ceil((camY + vh) / cell);
-  for (let gx = x0; gx <= x1; gx++)
-    for (let gy = y0; gy <= y1; gy++) {
-      let hsh = Math.imul(gx * 73856093 ^ gy * 19349663, 2654435761) >>> 0;
-      const rnd = () => ((hsh = Math.imul(hsh ^ (hsh >>> 15), 2246822519) >>> 0) % 1000) / 1000;
-      if (rnd() > 0.45) continue;
-      const x = gx * cell + rnd() * cell;
-      const y = gy * cell + rnd() * cell;
-      const k = rnd();
-      if (k > 0.55) {
-        // 脚下飘着的小团云
-        const rr = 10 + rnd() * 14;
-        ctx.fillStyle = 'rgba(207,226,238,0.55)';
-        for (let i = 0; i < 3; i++) {
-          ctx.beginPath();
-          ctx.arc(x + (i - 1) * rr * 0.8, y + 3, rr * (i === 1 ? 0.8 : 0.6), 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        for (let i = 0; i < 3; i++) {
-          ctx.beginPath();
-          ctx.arc(x + (i - 1) * rr * 0.8, y, rr * (i === 1 ? 0.75 : 0.55), 0, Math.PI * 2);
-          ctx.fill();
-        }
-        continue;
-      }
-      ctx.strokeStyle = `rgba(43,93,102,${0.2 + rnd() * 0.15})`;
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      if (k < 0.4) {
-        for (let i = -1; i <= 1; i++) {
-          ctx.moveTo(x + i * 3, y);
-          ctx.quadraticCurveTo(x + i * 4, y - 6, x + i * 6, y - 9 - rnd() * 4);
-        }
-        ctx.stroke();
-      } else {
-        ctx.fillStyle = rgba(look.hills[0], 0.3);
-        ctx.ellipse(x, y, 10 + rnd() * 8, 5 + rnd() * 3, 0, Math.PI, 0);
-        ctx.fill();
-        ctx.stroke();
-      }
-    }
-}
 
 // 斩墨后留在纸上的墨渍，慢慢淡去
 interface Splat { x: number; y: number; r: number; t: number; seed: number }
@@ -338,7 +185,7 @@ function shotStroke(ctx: CanvasRenderingContext2D, x: number, y: number, vx: num
 }
 
 export function runBattle(spec: BattleSpec, root: HTMLElement, era = 'E1'): Promise<BattleResult> {
-  look = ERA_LOOK[era] ?? ERA_LOOK.E1;
+  const backdrop = new BattleBackdrop(era);
   return new Promise((resolve) => {
     const sim = new BattleSim(spec);
     const fxState: FxState = { seen: new WeakSet(), splats: [], shake: 0, flash: 0, lastHp: sim.hp };
@@ -471,7 +318,7 @@ export function runBattle(spec: BattleSpec, root: HTMLElement, era = 'E1'): Prom
       if (!paused) sim.update(dt, mx, my);
       renderActs();
       fxUpdate(fxState, sim, dt);
-      draw(ctx, sim, root.clientWidth, root.clientHeight, joy, fxState);
+      draw(ctx, sim, root.clientWidth, root.clientHeight, joy, fxState, backdrop);
       drawHud(hud, sim, paused);
       if (sim.done) {
         endTimer += dt;
@@ -561,26 +408,16 @@ function fxUpdate(st: FxState, sim: BattleSim, dt: number) {
   st.flash = Math.max(0, st.flash - dt * 2);
 }
 
-function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: number, joy: { ox: number; oy: number; x: number; y: number } | null, fx: FxState) {
+function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: number, joy: { ox: number; oy: number; x: number; y: number } | null, fx: FxState, backdrop: BattleBackdrop) {
   const camX = sim.px + (fx.shake > 0 ? (Math.random() - 0.5) * fx.shake * 28 : 0);
   const camY = sim.py + (fx.shake > 0 ? (Math.random() - 0.5) * fx.shake * 28 : 0);
   const zoom = Math.min(1, Math.max(0.62, Math.min(w, h) / 760));
-  ctx.fillStyle = makePaper(ctx) ?? '#eef6fa';
-  ctx.fillRect(0, 0, w, h);
-  drawMountains(ctx, w, h, camX, camY, sim.spec.realm, sim.spec.kind);
-  if (sim.spec.kind === 'trial') {
-    const g = ctx.createLinearGradient(0, 0, 0, h * 0.5);
-    g.addColorStop(0, 'rgba(70,70,95,0.16)');
-    g.addColorStop(1, 'rgba(70,70,95,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h * 0.5);
-  }
+  backdrop.draw(ctx, w, h, camX, camY, sim.t, sim.spec.kind);
   ctx.save();
   ctx.translate(w / 2, h / 2);
   ctx.scale(zoom, zoom);
   ctx.translate(-camX, -camY);
   const t = sim.t;
-  drawGround(ctx, camX, camY, w / zoom / 2 + 90, h / zoom / 2 + 90);
   drawSplats(ctx, fx.splats);
 
   // 场地结界（靠近才显示）
@@ -600,16 +437,6 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
       ctx.arc(0, 0, sim.arena, 0, Math.PI * 2, true);
       ctx.fill();
     }
-  }
-
-  // 纸色薄雾（视差）
-  ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  for (let i = 0; i < 6; i++) {
-    const mx = ((i * 640 + t * 20) % 2400) - 1200;
-    const my = ((i * 410) % 1800) - 900;
-    ctx.beginPath();
-    ctx.ellipse(mx, my, 220, 40, 0, 0, Math.PI * 2);
-    ctx.fill();
   }
 
   // 区域
