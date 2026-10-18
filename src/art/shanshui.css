@@ -1,0 +1,242 @@
+/* 淡彩青绿：全游戏共用的纸面、细线与山水层级。
+   只接管视觉；尺寸、滚动、棋盘常驻及操作状态仍由原布局负责。 */
+:root {
+  --paper: #edf5f1;
+  --paper-2: #f4f8f3;
+  --paper-3: #fafbf6;
+  --ink: #243f40;
+  --ink-2: #526c69;
+  --blue: #477c83;
+  --teal: #386e68;
+  --pale: #adcac2;
+  --jade: #f8faf4;
+  --line: rgba(66, 111, 103, .22);
+  --red: #a45248;
+  --gold: #8c7142;
+  --green: #46766a;
+  --purple: #796e87;
+  --shadow: 0 8px 28px rgba(43, 78, 72, .07);
+  --paper-tex: linear-gradient(135deg, rgba(213,232,222,.12), rgba(255,255,244,.12));
+  --mountains: url('./backgrounds/celestial-landscape.webp');
+  --mist-surface: rgba(247, 250, 244, .96);
+}
+body {
+  background: linear-gradient(180deg, rgba(237,245,241,.58), rgba(237,245,241,.94) 75%), var(--mountains) center top / cover fixed;
+}
+.topbar {
+  background: rgba(242,248,241,.94);
+  border-color: var(--line);
+  backdrop-filter: none;
+}
+.brand { color: var(--teal); letter-spacing: 2px; }
+.brand small, .meta-info { color: var(--ink-2); }
+.btn {
+  background: var(--paper-3);
+  color: var(--teal);
+  border-color: var(--line);
+  border-radius: 7px;
+  box-shadow: none;
+}
+.btn:hover:not(:disabled), .opt:hover:not(:disabled) {
+  background: #e7f1e9;
+  border-color: #739d90;
+}
+.btn.primary, .btn.primary:hover:not(:disabled) {
+  background: #386e68;
+  border-color: #386e68;
+  color: #fafbf6;
+}
+.btn.active { background: #dcebe2; border-color: #6c978b; color: #2d6059; }
+.btn.ghost { color: var(--ink-2); }
+.btn.ghost:hover:not(:disabled) { color: var(--teal); background: #e3eee4; }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible {
+  outline: 2px solid #477c73;
+  outline-offset: 3px;
+}
+.scroll-wrap, .panel {
+  background: var(--mist-surface);
+  border-color: var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.scroll { background: transparent; color: var(--ink); }
+.scene { border-color: var(--line); background: #dbeae3; }
+.scene::after { height: 15px; background: linear-gradient(transparent, rgba(237,245,239,.6)); }
+.scroll .age { color: var(--teal); }
+.scroll .age::after { background: linear-gradient(90deg, #c1d7cc, transparent); }
+.scroll .age::before { width: 5px; height: 5px; }
+.panel h3, .panel h4, .sheet-head { color: var(--teal); border-color: var(--line); }
+.bar { background: #dce8df; border-radius: 3px; box-shadow: none; }
+.bar > div { background: #66988b; }
+.bar.hp > div { background: #b77263; }
+.bar em { color: #243f40; text-shadow: 0 1px 1px #f4f8f3; }
+.chip, .lamp { border-radius: 4px; box-shadow: none; }
+.lamp { background: rgba(191,173,123,calc(.12 + var(--l) * .3)); }
+
+/* 45° 棋盘：玉色纸片、微缩点景与中央远山。 */
+.deal { background: rgba(237,245,239,.76); border-color: var(--line); }
+.board-heading { border-color: var(--line); }
+.board-heading b { color: var(--teal); }
+.board-viewport { background: radial-gradient(ellipse at 50% 65%, #dcebe4 0, transparent 68%); }
+.board-center { background: rgba(248,250,244,.8); border-color: var(--line); border-radius: 8px; }
+.board .tile {
+  --ground: #e2eee2;
+  --edge-left: #c7dbce;
+  --edge-right: #b0ccc0;
+  --rim: #9dbfb1;
+  color: #375e59;
+}
+.board .tile.k-start, .board .tile.k-fate { --ground: #e9ecda; --edge-right: #c2ccb0; }
+.board .tile.tag-jie, .board .tile.tag-xiong { --ground: #e9e4db; --rim: #b5a395; }
+.board .tile.tag-yuan, .board .tile.tag-yin { --ground: #d9eae0; --rim: #90b5a4; }
+.board .tile-shadow { opacity: .045; }
+.board .tile-inset { stroke: #fafbf0; stroke-opacity: .7; }
+.board .tile-prop { opacity: .94; }
+.board .tile:hover .tile-ground, .board .tile.focused .tile-ground {
+  stroke: #477c73; fill: #f2f4df;
+}
+.board .tile.target .tile-ground { fill: #dfedd5; stroke: #477c73; }
+.board .tile.here .tile-ground { fill: #f5ecd6; stroke: #997f51; }
+.board .t-name { color: #355c57; text-shadow: 0 1px 2px #f5f8ed; }
+.board .t-month { color: #536f66; }
+.map-name { fill: #46756b; }
+.map-caption { fill: #5a796f; }
+.die {
+  background: #f7f9ed;
+  border-color: #a9c3b3;
+  box-shadow: inset -1px -2px 0 #d9e5d9, 0 2px 4px rgba(55,94,84,.08);
+}
+.roll-btn, .again-btn { box-shadow: none; border-color: var(--line); }
+.roll-btn { background: #edf3e6; color: var(--teal); animation: none; }
+.roll-btn b { color: var(--teal); }
+.land-tip > span, .tile-tip-body { box-shadow: 0 2px 8px rgba(43,78,72,.09); }
+
+/* 所有抉择、天书、设置、结算共用一张清淡纸面。 */
+.modal {
+  background: rgba(55,87,81,.28);
+  backdrop-filter: blur(3px);
+}
+.modal .modal-box {
+  background: linear-gradient(150deg, #f8faf3, #edf5ee);
+  border: 1px solid #afc8ba;
+  border-radius: 12px;
+  box-shadow: 0 18px 55px rgba(33,66,59,.17);
+}
+.modal h2, .modal h3 { color: var(--teal); }
+.modal h2 { letter-spacing: 2px; }
+.opt, .talent, .card, .lv-opt {
+  background: #f8faf4;
+  border-color: var(--line);
+  border-radius: 7px;
+  box-shadow: none;
+  color: var(--ink);
+}
+.opt.chosen, .talent.on, .card.chosen { border-color: #568577; background: #dfecdf; }
+.talent.on { box-shadow: none; }
+.style-well h2::before { background: #537a70; color: #f4f8ed; }
+.opt::before { background: #88ae9c; }
+.modal input, .modal select, .modal textarea {
+  accent-color: #477c73;
+  border-color: var(--line);
+  color: var(--ink);
+  background-color: #fafbf6;
+}
+.ec-loc { background: #e1ede3; color: #3d6d60; border-color: #b7cdbb; }
+.ec-pic { background: #d8e9e0; border-color: #c1d5c7; box-shadow: none; border-radius: 8px; }
+.ec-pic::after { background: linear-gradient(0deg, rgba(237,245,239,.55), transparent 50%); }
+.ec-pic .sj { filter: none; }
+.ec-more { color: #386e68; }
+.ec-full { color: var(--ink); background: #e8f0e7; border-color: #96b7a6; }
+.opt.act { border-color: #c3d6c7; background: #f7faf2; }
+.act-ic { background: #e9f1e4; border-radius: 8px; }
+.act-main b { color: #284f48; }
+.act-main small { color: #5c7567; }
+.act-tags .tg { background: #e6eee4; color: #45635a; border-color: #c6d7c7; }
+.act-tags .tg.up { color: #346751; background: #e2ede1; }
+.act-tags .tg.down, .act.risk-high .act-risk { color: #93473e; background: #f2e5db; }
+.act-tags .tg.gold { color: #79613f; background: #efe9da; }
+.act-tags .tg.unknown { color: #79613f; background: #efe9da; }
+.act-detail { color: var(--ink-2); }
+.sj-glow, .sj-rings, .sj-beam, .sj-motes, .sj-coins { animation-duration: 5s; }
+.oc-line, .oc-chip { box-shadow: none; border-color: var(--line); }
+
+/* 行囊从厚重的立体卷轴收简为装裱画册，品级颜色继续保留。 */
+.bag-root {
+  background: linear-gradient(rgba(231,242,233,.76),rgba(237,245,239,.93)), var(--mountains) center / cover;
+  backdrop-filter: none;
+}
+.bag-root .nb-rod { background: #dbe9dc; border: 1px solid #adc4b2; box-shadow: none; border-radius: 7px; }
+.bag-root .nb-rod h2 { color: var(--teal); letter-spacing: 5px; }
+.bag-root .nb-cap { background: #9cb6a5; box-shadow: none; border-radius: 3px; width: 12px; }
+.bag-root .nb-paper { background: #f5f8ef; box-shadow: var(--shadow); border-color: var(--line); }
+.bag-root .nb-paper::before { border-color: #d7e3d6; outline: none; }
+.bag-root .nb-tile, .bag-root .nb-d-icon { box-shadow: none; border-radius: 7px; }
+.bag-root .nb-tile.on { outline: 2px solid #558577; outline-offset: 1px; }
+.bag-root .nb-stats, .bag-root .nb-grid-wrap, .bag-root .nb-detail { background: #f3f7ee; border-color: var(--line); box-shadow: var(--shadow); }
+.bag-root .nb-tab { border-color: var(--line); background: #eff4e9; color: var(--ink-2); }
+.bag-root .nb-tab.on { background: #d9e8d9; color: #305f51; border-color: #7b9f87; }
+.bag-root .nb-tag { background: #98614e; box-shadow: none; }
+.bag-root .nb-wisps { opacity: .3; }
+.bag-root .nb-sitter-svg { filter: none; }
+.tr-card { background: #f8faf3; border-color: #c3d6c7; border-radius: 6px; }
+.tr-card.k-realm, .tr-card.k-birth, .tr-card.k-death { background: #e6eee2; }
+.tr-bar, .tr-tabs { border-color: var(--line); }
+.lk { background: #f4f7ee; }
+
+/* 关键演出使用淡彩山水和一枚印，取消大墨团、射线及刺眼金光。 */
+.moment {
+  background: linear-gradient(rgba(235,245,237,.48), rgba(239,246,237,.85)), var(--mountains) center / cover;
+  color: var(--ink);
+}
+.moment .m-blot, .moment .m-rays, .m-birth::before, .m-birth::after { display: none; }
+.moment .m-big { color: #386c64; text-shadow: none; }
+.moment .m-sub { color: #586f60; }
+.moment .m-seal { background: #a45248; box-shadow: none; border-radius: 3px; }
+.moment .m-skip { opacity: .85; color: var(--ink-2); }
+.m-death, .m-lose { background: linear-gradient(rgba(44,69,67,.82),rgba(35,58,57,.9)), var(--mountains) center / cover; color: #ecf2e8; }
+.m-death .m-big, .m-lose .m-big, .m-death .m-sub, .m-lose .m-sub,
+.m-death .m-skip, .m-lose .m-skip { color: #e2eddf; }
+.m-page .m-big, .m-ending .m-big { color: #806d45; }
+.hud-top, .hud-bottom, .hud-msg { background: rgba(244,249,239,.94); border-color: #abc7b7; box-shadow: var(--shadow); border-radius: 7px; }
+.level-up { background: #f3f7eb; border-color: #abc3a7; box-shadow: var(--shadow); border-radius: 10px; }
+.touch-tip { background: rgba(43,77,68,.9); }
+.toast { background: #345e56; color: #f7faef; box-shadow: var(--shadow); }
+
+@media (max-width: 760px) {
+  body { background: #edf5ef; }
+  .scroll-wrap { border-radius: 0; background: linear-gradient(rgba(239,247,239,.91),rgba(239,247,239,.98)),var(--mountains) center / cover; }
+  .mhead.m-only { background: #edf5ec; border-color: #c2d6c6; }
+  .ms-seal { background: #edf2df; border-color: #78947d; color: #3c6654; box-shadow: none; transform: none; }
+  .m-gear svg { background: #f6f9ef; border-color: #bfd2bc; }
+  .board.mb .mb-head, .mb-where { color: #526c60; }
+  .mb-sign { background: #edf3e6; border-color: #bfd0b7; }
+  .mb-sign i { background: #628772; }
+  .mb-sign.gathered i { background: var(--red); }
+  .mb-card, .mb-card.landing { background: #f7faf0; border-color: #b9d0bc; box-shadow: none; border-radius: 9px; }
+  .mb-card.landing { border-left: 3px solid #719883; }
+  .mb-round, .mb-again { background: #f3f7eb; border-color: #b2c8b0; color: #3d6652; box-shadow: none; }
+  .mb-round.active { background: #dcebd8; border-color: #719477; color: #305b42; }
+  .board.mb .mb-main.roll, .board.mb .mb-main.go {
+    background: #386e68; border: 1px solid #386e68; color: #fafbf4;
+    box-shadow: 0 3px 9px rgba(45,87,69,.12); animation: none;
+  }
+  .board.mb .mb-main small { color: #e4efdf; }
+  .mb-full { background: #f6faee; border-color: #b5cbb5; color: #426650; }
+  .mtabs { background: #f1f6eb; border-color: #bfcfba; }
+  .mtab { color: #617260; }
+  .mtab.on { background: #e0ecdb; border-radius: 9px 9px 0 0; }
+  .mtab.on, .mtab.on b { color: #305d47; }
+  .panel { background: #f3f7ec; border-radius: 14px 14px 0 0; }
+  .more-sheet { background: #f3f7eb; box-shadow: var(--shadow); }
+  .more-item { background: #eaf2e3; border-color: #c5d5bc; }
+  body.m-log .scroll-wrap > .scroll, body.m-log .mlog-head.mui-only { background: #f1f6eb; }
+  .modal .modal-box { border-radius: 14px 14px 0 0; }
+  .moment { background-image: linear-gradient(rgba(235,245,237,.48), rgba(239,246,237,.85)),url('./backgrounds/celestial-portrait.webp'); }
+  .m-death, .m-lose { background-image: linear-gradient(rgba(44,69,67,.82),rgba(35,58,57,.9)),url('./backgrounds/celestial-portrait.webp'); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .moment, .moment.out, .moment .m-big span, .moment .m-line, .moment .m-sub, .moment .m-seal {
+    animation: none; opacity: 1; transform: none;
+  }
+  .sj *, .tile.target .tile-ground, .pawn-ring, .mb-main, .roll-btn { animation: none; }
+}

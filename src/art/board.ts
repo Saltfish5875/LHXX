@@ -32,17 +32,17 @@ export function tilePosition(size: number, slot: number) {
 const tree = (x: number, y: number, scale = 1, blossom = false) => `<g transform="translate(${x} ${y}) scale(${scale})">
   <path d="M0 0v-28m0 15-8-8m8 4 9-11" fill="none" stroke="#766f5a" stroke-width="2.5"/>
   ${blossom
-    ? '<path d="M-13-26q-10-15 4-17 6-17 18-5 19-2 16 14 8 15-10 18-16 7-28-10" fill="#d8a1a0"/><circle cx="-7" cy="-36" r="4" fill="#efd0c3"/><circle cx="11" cy="-29" r="5" fill="#efd0c3"/>'
-    : '<path d="m0-55-18 27h9l-15 18h20V-1H4v-9h20L9-28h9Z" fill="#4f8c82"/><path d="m0-55 0 45h24L9-28h9Z" fill="#2e6868" opacity=".65"/>'}
+    ? '<path d="M-13-26q-10-15 4-17 6-17 18-5 19-2 16 14 8 15-10 18-16 7-28-10" fill="#c7b6ad"/><circle cx="-7" cy="-36" r="4" fill="#e0d6c4"/><circle cx="11" cy="-29" r="5" fill="#e0d6c4"/>'
+    : '<path d="m0-55-18 27h9l-15 18h20V-1H4v-9h20L9-28h9Z" fill="#7b9e8c"/><path d="m0-55 0 45h24L9-28h9Z" fill="#5e857a" opacity=".65"/>'}
   </g>`;
 
 const rock = (x: number, y: number, s = 1) => `<g transform="translate(${x} ${y}) scale(${s})"><path d="m-17 0 4-15 13-8 16 11 3 13-19 9Z" fill="#b2c5c0"/><path d="M0-23 2-4 19 1 16-12Z" fill="#809d9d"/><path d="m-13-15 13-8-4 15" fill="#d7e0d5"/></g>`;
 
-const house = (x = 60, y = 85, s = 1, roof = '#467b81') => `<g transform="translate(${x} ${y}) scale(${s})">
-  <path d="m-25-27 24-15 28 17v25L2 15-25-1Z" fill="#f2ead3"/>
+const house = (x = 60, y = 85, s = 1, roof = '#658f87') => `<g transform="translate(${x} ${y}) scale(${s})">
+  <path d="m-25-27 24-15 28 17v25L2 15-25-1Z" fill="#edf1e2"/>
   <path d="M2-11 27-25V0L2 15Z" fill="#c4d5ca"/>
   <path d="m-35-29 29-24 43 24-31 19Z" fill="${roof}"/>
-  <path d="m-35-29 31 11 41-11L6-10Z" fill="#2c5763" opacity=".7"/>
+  <path d="m-35-29 31 11 41-11L6-10Z" fill="#527b76" opacity=".7"/>
   <path d="m-6-53 43 24-8-13-31-17-11 4Z" fill="#82aaa3"/>
   <path d="m-17-17 9 5V5l-9-5Z" fill="#5b706b"/>
   <path d="m10-4 9-5v8l-9 5Z" fill="#edca79"/>
@@ -51,23 +51,23 @@ const house = (x = 60, y = 85, s = 1, roof = '#467b81') => `<g transform="transl
 
 const pavilion = (gold = false) => `<g>
   <path d="m25 91 35-22 36 22-36 24Z" fill="#a5bcb3"/>
-  <path d="m33 67 27-17 27 17v24l-27 17-27-17Z" fill="#eae7d2"/>
+  <path d="m33 67 27-17 27 17v24l-27 17-27-17Z" fill="#e8f0e2"/>
   <path d="M60 74 87 58v33l-27 17Z" fill="#a7c3b7"/>
   <path d="M41 73v20m14-13v19m12-21v19m12-26v20" stroke="#63867e" stroke-width="3"/>
-  <path d="m19 64 39-27 43 27-41 23Z" fill="${gold ? '#b99b59' : '#548a8b'}"/>
+  <path d="m19 64 39-27 43 27-41 23Z" fill="${gold ? '#b99b59' : '#71988f'}"/>
   <path d="m19 64 41 15 41-15-41 23Z" fill="#355f69"/>
-  <path d="m31 43 28-24 30 24-29 18Z" fill="${gold ? '#d5bb78' : '#80aaa3'}"/>
+  <path d="m31 43 28-24 30 24-29 18Z" fill="${gold ? '#d5bb78' : '#a8c3b3'}"/>
   <path d="m31 43 29 11 29-11-29 18Z" fill="#46737b"/>
   <path d="M59 19V9m-4 4h8" stroke="#b99b59" stroke-width="2"/>
   </g>`;
 
 const stall = (x: number, y: number, s: number, red = false) => `<g transform="translate(${x} ${y}) scale(${s})">
-  <path d="m-22-4 24-13 25 14-25 15Z" fill="#c2aa7c"/>
+  <path d="m-22-4 24-13 25 14-25 15Z" fill="#b4ad90"/>
   <path d="M-22-4v-31M2 11v-31M27-3v-31" stroke="#826c52" stroke-width="2.5"/>
-  <path d="m-28-33 25-17 37 20-30 16Z" fill="${red ? '#bb7770' : '#628e88'}"/>
+  <path d="m-28-33 25-17 37 20-30 16Z" fill="${red ? '#a88577' : '#628e88'}"/>
   <path d="m-28-33 8 12 24 7 30-16-2-7-28 15Z" fill="${red ? '#dfaaa0' : '#97b8a4'}"/>
   <path d="m-8-44 28 16m-16-21 28 16" stroke="#ece1c8" stroke-width="4"/>
-  <path d="m-16-9 9-4 8 4-9 5Z" fill="#e6c36d"/><path d="m7-8 8-4 7 4-8 5Z" fill="#d8e0ca"/>
+  <path d="m-16-9 9-4 8 4-9 5Z" fill="#c6b78e"/><path d="m7-8 8-4 7 4-8 5Z" fill="#d8e0ca"/>
   </g>`;
 
 const book = () => `<g transform="translate(60 76)">
@@ -88,9 +88,9 @@ const swords = () => `${rock(60, 87, 1.15)}<g stroke-linejoin="round">
 const lotus = () => `<g transform="translate(60 78)">
   <ellipse cy="8" rx="32" ry="16" fill="#79b8b1" opacity=".3"/>
   <path d="M0 7q-31 3-31-18Q-9-16 0 7m0 0Q31 10 31-11 11-17 0 7" fill="#80b4a2"/>
-  <path d="M0 4Q-27-9-19-30-1-25 0 4m0 0Q27-9 19-30 1-25 0 4" fill="#d6ac98"/>
-  <path d="M0 4q-16-21 0-43Q16-17 0 4" fill="#f1d5b3"/>
-  <circle cy="-10" r="5" fill="#e8bd63"/>
+  <path d="M0 4Q-27-9-19-30-1-25 0 4m0 0Q27-9 19-30 1-25 0 4" fill="#cbb8a3"/>
+  <path d="M0 4q-16-21 0-43Q16-17 0 4" fill="#e3d4c0"/>
+  <circle cy="-10" r="5" fill="#b6a77c"/>
   <path d="M-30-36h6m-3-3v6m45-15h6m-3-3v6" stroke="#d1ac58" stroke-width="2"/>
   </g>`;
 
@@ -200,7 +200,7 @@ function eventArt(t: TileView) {
   if (t.tag === '劫') return '<g class="event-signal signal-danger"><path d="m97 28-13 18h10l-9 17 22-24H96l9-11Z" fill="#b85b50" stroke="#f5e3c8" stroke-width="1.5"/></g>';
   if (t.tag === '凶') return '<g class="event-signal"><path d="M94 32 106 54H82Z" fill="#5b6574"/><path d="M94 39v7m0 3v2" stroke="#f3e8d5" stroke-width="2"/></g>';
   if (t.tag === '缘' || t.kind === 'chain') return '<g class="event-signal signal-fate"><path d="M93 36q-13-13-16-1-1 9 16 17 17-8 16-17-3-12-16 1Z" fill="#75a898" stroke="#e3ebce" stroke-width="1.5"/></g>';
-  if (t.tag === '引') return '<g class="event-signal"><path d="m85 25 18 7v24l-18-7Z" fill="#d1b471" stroke="#f6e2ae"/><path d="m90 35 8 3m-8 3 8 3" stroke="#8b7649" stroke-width="2"/></g>';
+  if (t.tag === '引') return '<g class="event-signal"><path d="m85 25 18 7v24l-18-7Z" fill="#d1b471" stroke="#e4ddbb"/><path d="m90 35 8 3m-8 3 8 3" stroke="#8b7649" stroke-width="2"/></g>';
   if (t.tag === '故') return '<g class="event-signal"><path d="M94 25v7m0 21v6" stroke="#a390ad" stroke-width="2"/><ellipse cx="94" cy="43" rx="9" ry="12" fill="#a795b0"/><path d="M94 34v18" stroke="#ead6d8"/></g>';
   return '';
 }
@@ -234,10 +234,10 @@ export function boardBackdrop(size: number, name: string): string {
   const cy = (side - 1) * STEP_Y + 98;
   const radius = Math.max(27, (side - 2) * 24);
   return `<svg class="board-landscape" viewBox="0 0 ${width} ${height}" aria-hidden="true">
-    <path d="M${cx - radius * 1.8} ${cy + 25}q${radius} ${-radius * .65} ${radius * 1.8} 0t${radius * 1.8} 0" fill="none" stroke="#a5c9c4" stroke-width="16" opacity=".13"/>
-    <g transform="translate(${cx} ${cy}) scale(1 .7071)" fill="none" stroke="#96b6ad">
-      <circle r="${radius}" stroke-width="1" opacity=".5"/><circle r="${radius - 6}" stroke-dasharray="2 7" opacity=".5"/>
-      <path d="M${-radius - 13} 0H${-radius + 7}M${radius - 7} 0h20M0 ${-radius - 13}v20M0 ${radius - 7}v20" opacity=".7"/>
+    <g transform="translate(${cx} ${cy - radius * .35})" stroke-linejoin="round">
+      <path d="M${-radius} 18Q${-radius * .6} -20 ${-radius * .38} -40Q${-radius * .16} -14 0 2Q${radius * .3} -30 ${radius * .42} -24L${radius} 22Z" fill="#bdd5cb" opacity=".55"/>
+      <path d="M${-radius * .72} 18Q${-radius * .3} -5 ${-radius * .2} -25Q0 -10 ${radius * .15} 12L${radius * .62} 20Z" fill="#9dbfb5" opacity=".4"/>
+      <path d="M${-radius * .55} 11L${-radius * .21} -15 0 6M${radius * .23} -9L${radius * .42} -17 ${radius * .7} 10" fill="none" stroke="#749e94" opacity=".32"/>
     </g>
     <text x="${cx}" y="${cy + 4}" class="map-name">${name}</text>
     <text x="${cx}" y="${cy + 22}" class="map-caption">一 步 一 流 年</text>
