@@ -291,7 +291,7 @@ function idleBoard() {
   b.classList.add('idle');
   b.classList.remove('peeking', 'choosing');
   dealEl.querySelectorAll('.tile').forEach((t) => t.classList.remove('target', 'in-path', 'focused', 'peekable'));
-  dealEl.querySelectorAll('.land-tip, .tile-tip').forEach((x) => x.remove());
+  dealEl.querySelectorAll('.tile-tip').forEach((x) => x.remove());
   dealEl.querySelectorAll<HTMLButtonElement>('button').forEach((x) => {
     if (x.dataset.a !== 'log') x.disabled = true;
   });
@@ -371,10 +371,11 @@ async function roll(v: RollView): Promise<RollAction> {
               const description = [t.month, t.name, t.tag && t.tag !== '平' ? t.tag : '', t.lv ? `${t.lv}级` : '', t.slot === v.pos ? '当前位置' : '', targets.includes(t.slot) ? '可前往' : '', t.peek ? '窥得：' + t.peek : t.hint].filter(Boolean).join('，');
               return `<button class="${cls}" data-s="${t.slot}" style="${tilePosition(n, t.slot).style}" aria-label="${esc(description)}" aria-pressed="${focus === t.slot}" ${t.slot === v.pos ? 'aria-current="location"' : ''} title="${esc(description)}">
                 ${tileGraphic(t, v.stage)}
-                <span class="t-month">${esc(t.month)}</span>
-                <span class="t-name">${esc(t.name)}</span>
-                ${t.tag && t.tag !== '平' ? `<span class="t-tag">${t.tag}</span>` : ''}
-                ${t.lv ? `<span class="t-lv">${t.lv}</span>` : ''}
+                <span class="t-name">
+                  ${t.tag && t.tag !== '平' ? `<span class="t-tag">${t.tag}</span>` : ''}
+                  <span class="t-name-text">${esc(t.name)}</span>
+                  ${t.lv ? `<span class="t-lv">${t.lv}</span>` : ''}
+                </span>
               </button>`;
             })
             .join('');
@@ -390,7 +391,7 @@ async function roll(v: RollView): Promise<RollAction> {
       dealEl.innerHTML = `
         <div class="board s${k}${expanded ? '' : ' collapsed'}${ruyiMode ? ' choosing' : ''}${v.gathered ? ' gathered' : ''}${peekMode ? ' peeking' : ''}" style="--k:${k};--map-ratio:${geometry.ratio}">
           <div class="board-heading"><b>命途棋盘</b><span>${esc(v.stageName)} · ${n} 格</span><button class="btn sm board-toggle" data-a="board" aria-expanded="${expanded}" aria-controls="board-map-panel">${expanded ? '收起棋盘' : '展开棋盘'}</button></div>
-          <div class="board-viewport" id="board-map-panel" ${expanded ? '' : 'hidden'}><div class="board-map" role="group" aria-label="${esc(v.stageName)}命途棋盘，${n}格，顺时针行进">
+          <div class="board-viewport" id="board-map-panel" ${expanded ? '' : 'hidden'}><div class="board-map" style="min-width:${geometry.width * .4}px" role="group" aria-label="${esc(v.stageName)}命途棋盘，${n}格，顺时针行进">
           ${boardBackdrop(n, esc(v.stageName))}
           ${tileButtons(targets)}
           ${tipHtml()}
@@ -400,7 +401,7 @@ async function roll(v: RollView): Promise<RollAction> {
             <div class="sign${v.gathered ? ' gathered' : ''}"><span>${esc(v.sign)}</span></div>
             <div class="b-info" role="status" aria-live="polite">${
               info
-                ? `<b>${esc(info.name)}</b> ${esc(info.peek ? '窥得：' + info.peek : info.hint)}`
+                ? `<b>${esc(info.month)} · ${esc(info.name)}${info.lv ? ` · ${info.lv}级` : ''}</b> ${esc(info.peek ? '窥得：' + info.peek : info.hint)}`
                 : peekMode
                   ? '点一格地点，窥它这一圈会发生什么'
                   : ruyiMode
@@ -428,18 +429,25 @@ async function roll(v: RollView): Promise<RollAction> {
     };
     // ---- 手机：棋盘常驻，一颗大按钮 ----
     let recenter = true; // 下一次摆盘时把视野对准棋子（或落点）
-    const zoomNow = () => mapZoom[n] ?? defaultZoom(n);
     const viewport = () => dealEl.querySelector<HTMLElement>('.board-viewport');
+    const fitWidth = () => {
+      const vp = viewport();
+      return vp ? Math.min(vp.clientWidth, vp.clientHeight * geometry.ratio) : 0;
+    };
+    // 矮屏也保证每格约 60px 宽；全图是用户主动选择的概览模式。
+    const preferredZoom = () => Math.max(defaultZoom(n), geometry.width * .5 / (fitWidth() || geometry.width));
+    const zoomNow = () => mapZoom[n] ?? preferredZoom();
     // 棋盘先按可用空间放下整圈，再乘放大倍数
     const layoutMap = () => {
       const vp = viewport();
       const map = vp?.querySelector<HTMLElement>('.board-map');
       if (!vp || !map || !vp.clientWidth || !vp.clientHeight) return;
-      const fit = Math.min(vp.clientWidth, vp.clientHeight * geometry.ratio);
-      map.style.width = `${Math.round(fit * zoomNow())}px`;
+      const width = Math.round(fitWidth() * zoomNow());
+      map.style.width = `${width}px`;
+      map.classList.toggle('overview', width * 120 / geometry.width < 48);
       const full = dealEl.querySelector<HTMLButtonElement>('[data-a="full"]');
       if (full) {
-        full.hidden = n < 20 && zoomNow() === 1;
+        full.hidden = n < 20 && preferredZoom() <= 1 && zoomNow() === 1;
         full.textContent = zoomNow() > 1 ? '全图' : '跟随';
       }
     };
@@ -487,9 +495,8 @@ async function roll(v: RollView): Promise<RollAction> {
       const targets = ruyiMode ? ruyiTargets : rolled ? v.targets : [];
       const tgt = rolled && !ruyiMode ? v.targets[0] : null;
       const tile = (s: number | null) => (s !== null && s < n ? v.tiles[s] : null);
-      // 落点小牌子：掷出后挂在要去的那一格上
+      // 落点说明放进下方预告卡，避免浮牌遮住相邻格。
       const land = tile(tgt);
-      const landTip = land && tgt !== v.pos ? `<div class="land-tip" style="${tilePosition(n, land.slot).tipStyle}"><span>${esc(land.name)}${land.tag && land.tag !== '平' ? `<em class="${TAG_CLASS[land.tag]}">${land.tag}</em>` : ''}${land.peek || land.hint ? `<small>${esc(land.peek ?? land.hint)}</small>` : ''}</span></div>` : '';
       // 中间这张小卡：窥命 / 如意骰 / 点开的格子 / 落点预告 / 刚才
       let cardCls = 'recent';
       let card = '';
@@ -530,7 +537,7 @@ async function roll(v: RollView): Promise<RollAction> {
             <div class="board-viewport"><div class="board-map" role="group" aria-label="${esc(v.stageName)}命途棋盘，${n}格，顺时针行进">
               ${boardBackdrop(n, esc(v.stageName))}
               ${tileButtons(targets)}
-              ${tipHtml()}${landTip}
+              ${tipHtml()}
             </div></div>
             <button class="mb-full" data-a="full" type="button">全图</button>
           </div>
@@ -599,7 +606,7 @@ async function roll(v: RollView): Promise<RollAction> {
             render();
             if (auto) scheduleAuto();
           } else if (a === 'full') {
-            mapZoom[n] = zoomNow() > 1 ? 1 : Math.max(1.45, defaultZoom(n));
+            mapZoom[n] = zoomNow() > 1 ? 1 : Math.max(1.45, preferredZoom());
             recenter = true;
             render();
           } else if (a === 'log') openSection('log');

@@ -234,56 +234,7 @@
   .mb-full[hidden] {
     display: none;
   }
-  /* 落点小牌子 */
-  .land-tip {
-    position: absolute;
-    z-index: 31;
-    pointer-events: none;
-  }
-  .land-tip > span {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    width: max-content;
-    max-width: 190px;
-    padding: 3px 9px;
-    border: 1px solid rgba(43, 111, 114, 0.55);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.97);
-    box-shadow: 0 4px 12px rgba(40, 63, 60, 0.2);
-    color: var(--ink);
-    font-family: var(--serif);
-    font-size: 13px;
-    white-space: nowrap;
-    transform: translate(-50%, calc(-100% - 4px));
-    animation: landTipIn 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
-  }
-  .land-tip em {
-    font-style: normal;
-    font-weight: 700;
-    color: #2f8a80;
-  }
-  .land-tip em.tag-jie,
-  .land-tip em.tag-xiong {
-    color: var(--red);
-  }
-  .land-tip em.tag-yuan,
-  .land-tip em.tag-yin {
-    color: #9a7426;
-  }
-  .land-tip small {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--ink-2);
-    font-size: 12px;
-  }
-  @keyframes landTipIn {
-    from {
-      opacity: 0;
-      transform: translate(-50%, calc(-100% + 6px));
-    }
-  }
+
 
   /* ---------- 「刚才」/「落点」小卡 ---------- */
   .mb-card {
@@ -636,7 +587,6 @@
   }
 }
 @media (max-width: 760px) and (prefers-reduced-motion: reduce) {
-  .land-tip > span,
   .board.mb .mb-main.roll {
     animation: none;
   }

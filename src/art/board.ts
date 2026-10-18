@@ -1,13 +1,14 @@
 // 旋转 45°、俯视 45°的正交投影。场景直立，地块按行列的深度排序。
 import type { TileView } from '../game/board';
 
-const STEP_X = 60;
+// 地块之间留缝；120px 的画布不等于相邻格的步长。
+const STEP_X = 70;
 const STEP_Y = STEP_X / Math.sqrt(2);
 const TILE_HEIGHT = 154;
 
 export function boardGeometry(size: number) {
   const side = size / 4 + 1;
-  const width = side * STEP_X * 2;
+  const width = (side - 1) * STEP_X * 2 + 120;
   const height = (side - 1) * STEP_Y * 2 + TILE_HEIGHT;
   return { side, width, height, ratio: width / height };
 }
@@ -196,15 +197,6 @@ export function tileArtKey(t: TileView, stage: 'mortal' | 'cult'): string {
   }
 }
 
-function eventArt(t: TileView) {
-  if (t.tag === '劫') return '<g class="event-signal signal-danger"><path d="m97 28-13 18h10l-9 17 22-24H96l9-11Z" fill="#b85b50" stroke="#f5e3c8" stroke-width="1.5"/></g>';
-  if (t.tag === '凶') return '<g class="event-signal"><path d="M94 32 106 54H82Z" fill="#5b6574"/><path d="M94 39v7m0 3v2" stroke="#f3e8d5" stroke-width="2"/></g>';
-  if (t.tag === '缘' || t.kind === 'chain') return '<g class="event-signal signal-fate"><path d="M93 36q-13-13-16-1-1 9 16 17 17-8 16-17-3-12-16 1Z" fill="#75a898" stroke="#e3ebce" stroke-width="1.5"/></g>';
-  if (t.tag === '引') return '<g class="event-signal"><path d="m85 25 18 7v24l-18-7Z" fill="#d1b471" stroke="#e4ddbb"/><path d="m90 35 8 3m-8 3 8 3" stroke="#8b7649" stroke-width="2"/></g>';
-  if (t.tag === '故') return '<g class="event-signal"><path d="M94 25v7m0 21v6" stroke="#a390ad" stroke-width="2"/><ellipse cx="94" cy="43" rx="9" ry="12" fill="#a795b0"/><path d="M94 34v18" stroke="#ead6d8"/></g>';
-  return '';
-}
-
 export function tileGraphic(t: TileView, stage: 'mortal' | 'cult'): string {
   const key = tileArtKey(t, stage);
   return `<svg class="tile-art art-${key}" viewBox="0 0 120 154" aria-hidden="true" focusable="false">
@@ -216,11 +208,12 @@ export function tileGraphic(t: TileView, stage: 'mortal' | 'cult'): string {
       <path class="tile-inset" d="m10 98 50-35 50 35-50 35Z"/>
       <ellipse class="route-dot" cx="60" cy="126" rx="3" ry="2"/>
     </g>
-    <g class="tile-prop" stroke-linejoin="round" stroke-linecap="round">${sceneArt(key)}</g>
-    ${eventArt(t)}
-    <g class="tile-pawn" transform="translate(88 94)">
-      <ellipse class="pawn-ring" cy="3" rx="12" ry="7" fill="none" stroke="#bd6454" stroke-width="2"/>
-      <path d="m-5-20-5 21Q0 7 10 1L5-20Z" fill="#faf3dc" stroke="#9caa9e"/>
+    <g class="tile-prop" stroke-linejoin="round" stroke-linecap="round">
+      <svg class="tile-miniature" x="30" y="46" width="60" height="56" viewBox="0 0 120 128" overflow="hidden">${sceneArt(key)}</svg>
+    </g>
+    <g class="tile-pawn" transform="translate(60 91) scale(1.2)">
+      <ellipse class="pawn-ring" cy="3" rx="14" ry="8" fill="#fff8e7" stroke="#a16b48" stroke-width="1.8"/>
+      <path d="m-5-20-5 21Q0 7 10 1L5-20Z" fill="#faf3dc" stroke="#42675f" stroke-width="1.5"/>
       <path d="m-2-17 4 0 3 21H1Z" fill="#b9695a"/>
       <circle cy="-24" r="5" fill="#dcb996"/>
       <path d="m-10-25 10-8 10 8Z" fill="#425f68"/><path d="M-8-25H8" stroke="#d3bf89" stroke-width="2"/>
@@ -239,8 +232,7 @@ export function boardBackdrop(size: number, name: string): string {
       <path d="M${-radius * .72} 18Q${-radius * .3} -5 ${-radius * .2} -25Q0 -10 ${radius * .15} 12L${radius * .62} 20Z" fill="#9dbfb5" opacity=".4"/>
       <path d="M${-radius * .55} 11L${-radius * .21} -15 0 6M${radius * .23} -9L${radius * .42} -17 ${radius * .7} 10" fill="none" stroke="#749e94" opacity=".32"/>
     </g>
-    <text x="${cx}" y="${cy + 4}" class="map-name">${name}</text>
-    <text x="${cx}" y="${cy + 22}" class="map-caption">一 步 一 流 年</text>
+    <title>${name}命途棋盘</title>
     <path d="m${cx - 7} ${cy - radius * .7071 - 7} 7-5 7 5-7 5Z" fill="#c5ae78" opacity=".65"/>
   </svg>`;
 }
