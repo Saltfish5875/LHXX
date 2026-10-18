@@ -292,3 +292,56 @@
     padding: 6px 5px;
   }
 }
+
+/* 独立浮层：结算弹窗开着也能看 */
+.trail-root {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+.tr-tabs select {
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  padding: 5px 8px;
+  color: var(--ink);
+}
+.tr-tabs select.active {
+  background: #dcecf2;
+  border-color: var(--teal);
+}
+.tr-life {
+  padding: 14px 0 4px var(--lanes);
+  border-top: 1px dashed var(--line);
+  margin-top: 6px;
+}
+.tr-life:first-child {
+  border-top: 0;
+  margin-top: 0;
+}
+.tr-life .btn {
+  font-family: var(--serif);
+  color: var(--blue);
+  font-size: 14px;
+  padding: 4px 10px;
+}
+.tr-cross {
+  font-style: normal;
+  font-size: 11px;
+  color: #8a6418;
+  border: 1px solid rgba(180, 138, 44, 0.5);
+  background: #fdf6e3;
+  border-radius: 10px;
+  padding: 0 6px;
+}
+.tr-jump.gone {
+  color: var(--ink-2);
+  border-style: dashed;
+  cursor: default;
+}
+.lk-前世 { color: #8a6418; background: #fdf6e3; }
+.t-brown { color: #8a5a2b; }
+.tr-svg .e-前世 { stroke: #b48a2c; stroke-width: 2.2; opacity: 0.9; }
+.tr-svg .e-前世.line { stroke: currentColor; stroke-dasharray: 6 4; }

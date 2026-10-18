@@ -94,6 +94,14 @@ async function choose(p: Prompt): Promise<number> {
       bb.onclick = () => openBag(game.L, refresh);
       box.querySelector('.hint')?.before(bb);
     }
+    // 墓志铭：死后复盘这一世，也能接着看前几世
+    if (p.style === 'epitaph' && game?.L?.trail?.nodes.length) {
+      const rb = document.createElement('button');
+      rb.className = 'btn sm bag-open';
+      rb.textContent = '复盘此生';
+      rb.onclick = () => openTrail(meta, game.L, { fromTop: true }); // 复盘从出生看起
+      box.querySelector('.hint')?.before(rb);
+    }
     window.addEventListener('keydown', onKey);
     let picked = false;
     async function done(i: number) {
@@ -861,8 +869,8 @@ function showPast() {
 }
 
 function showTrail() {
-  const box = openModal('', 'trail');
-  openTrail(box, meta, game?.L ?? null, closeModal);
+  togglePanel(false);
+  openTrail(meta, game?.L ?? null);
 }
 
 function showSettings() {
@@ -892,6 +900,8 @@ document.querySelectorAll<HTMLButtonElement>('[data-open]').forEach((b) => {
       if (game?.L) openBag(game.L, refresh);
       return;
     }
+    // 经历图谱也是独立浮层：结算时也能复盘
+    if (b.dataset.open === 'trail') return showTrail();
     if (modalEl.classList.contains('show')) return;
     if (b.dataset.open === 'panel') return togglePanel();
     togglePanel(false);
