@@ -13,6 +13,7 @@ import {
 } from '../data/board';
 import { chance, pick, randInt, shuffle, weighted } from './rng';
 import { layerUp, retreat } from './cult';
+import { chainBeat, chainLapStart, chainTileFace, chainTileStale, chainTilesDue } from './chains';
 
 const STOP = 0; // 「止」面
 const DUN = 7; // 「遁」面
@@ -52,8 +53,9 @@ export interface RollView {
   ruyi: number;
   lap: number;
   years: number;
+  nudge: boolean; // 龙驹：这一圈还能把点数拨 ±1
 }
-export type RollAction = { action: 'go'; die: number } | { action: 'ruyi'; value: number } | { action: 'reroll' } | { action: 'peek'; slot: number } | { action: 'rewind' };
+export type RollAction = { action: 'go'; die: number } | { action: 'ruyi'; value: number } | { action: 'reroll' } | { action: 'peek'; slot: number } | { action: 'rewind' } | { action: 'nudge'; d: 1 | -1 };
 
 export const faceName = (f: number) => (f === STOP ? '止' : f === DUN ? '遁' : f === JIE ? '劫' : String(f));
 
@@ -176,10 +178,19 @@ function refreshTiles(g: Game, full: boolean) {
       return d.stage !== stage || !g.availableLocs().some((l) => l.id === t.loc);
     }
     if (t.kind === 'stray') return !!STRAYS[t.ref!]?.mortalOnly && L.inDao;
+    if (t.kind === 'chain') return chainTileStale(g, t.ref) || (!!t.loc && LOC_BY_ID[t.loc].stage !== stage);
     return false;
   };
   // 待放的新格（按优先级）
   const add: Omit<Tile, 'slot'>[] = [];
+  // 因果链的「缘」格：到期没去的先记一次错过，再放这一圈到期的
+  const pinned: Tile[] = [];
+  for (const ct of chainTilesDue(g, flow)) {
+    const { slot, ...rest } = ct;
+    const st = flow.find((t) => t.slot === slot);
+    if (slot != null && st && !(st.kind === 'chain' && st.ttl > 0) && !isHook(st)) pinned.push({ slot, ...rest });
+    else add.push(rest);
+  }
   const has = (k: TileKind, ref?: string) => flow.some((t) => t.kind === k && (!ref || t.ref === ref) && t.ttl > 0 && !stale(t));
   const h = L.hook;
   if (h && !h.outcome && h.beat < 3 && L.age >= h.due && !flow.some(isHook)) {
@@ -211,7 +222,7 @@ function refreshTiles(g: Game, full: boolean) {
     }
   }
   // 换哪几格：先换失效、到期的，再随机，凑够 2～4 格（新境界整盘换）
-  const keep = (t: Tile) => isHook(t) && !stale(t);
+  const keep = (t: Tile) => (isHook(t) || (t.kind === 'chain' && t.ttl > 0) || pinned.some((p) => p.slot === t.slot)) && !stale(t);
   const order = shuffle(flow.filter((t) => !keep(t))).sort((a, b) => {
     const sa = stale(a) || a.ttl <= 0 ? 0 : 1;
     const sb = stale(b) || b.ttl <= 0 ? 0 : 1;
@@ -221,6 +232,8 @@ function refreshTiles(g: Game, full: boolean) {
   const n = Math.min(order.length, full ? order.length : Math.max(must, add.length, randInt(2, 4)));
   const slots = order.slice(0, n).map((t) => t.slot);
   for (const t of flow) if (slots.includes(t.slot)) B.tiles[t.slot] = { slot: t.slot, kind: 'loc', ttl: 0 }; // 先腾空，免得新地点和旧地点撞名
+  // 签到碑：固定在同一格
+  for (const p of pinned) B.tiles[p.slot] = p;
   for (const s of slots) {
     const nt = add.shift();
     if (nt) {
@@ -238,6 +251,18 @@ function refreshTiles(g: Game, full: boolean) {
     }
     B.seenLoc[l.id] = (B.seenLoc[l.id] ?? 0) + 1;
     B.tiles[s] = { slot: s, kind: 'loc', loc: l.id, ttl: randInt(2, 4) };
+  }
+  // 新放的「缘」格尽量挪到岁首后头六格里：头一掷就够得着（签到碑除外，它认准一格）
+  const flowSlots = boardLayout(B.tiles.length).flow;
+  for (const s of slots) {
+    const t = B.tiles[s];
+    if (t.kind !== 'chain' || s <= 6 || pinned.some((p) => p.slot === s)) continue;
+    const near = flowSlots.filter((x) => x >= 1 && x <= 6 && B.tiles[x].kind === 'loc' && (!B.tiles[x].tag || B.tiles[x].tag === '平' || B.tiles[x].tag === '缘'));
+    if (!near.length) continue;
+    const x = pick(near);
+    const other = B.tiles[x];
+    B.tiles[x] = { ...t, slot: x };
+    B.tiles[s] = { ...other, slot: s };
   }
 }
 
@@ -260,7 +285,7 @@ function markTags(g: Game) {
     t.peeked = undefined;
     if (d.danger && L.inDao) t.tag = B.gathered || (jie < maxJie && chance(0.35 + (era?.calamityBoost ?? 0))) ? '劫' : '平';
     if (t.tag === '劫') jie += 1;
-    else if (d.fatal && !L.inDao) t.tag = !B.tiles.some((x) => x.tag === '凶') && chance(0.1) ? '凶' : '平';
+    else if (d.fatal && !L.inDao) t.tag = !L.flags.xiongPing && !B.tiles.some((x) => x.tag === '凶') && chance(0.1) ? '凶' : '平';
     else if (d.chance) t.tag = chance(L.attrs.luck >= 7 ? 0.8 : 0.6) ? '缘' : '平';
     else t.tag = !B.gathered && chance(0.08 + L.attrs.luck * 0.01) ? '缘' : '平';
   }
@@ -374,7 +399,7 @@ function dest(g: Game, pos: number, face: number): Dest {
   if (face === DUN) {
     for (let s = pos + 1; s < n; s++) {
       const t = B.tiles[s];
-      if (t.tag === '缘' || t.tag === '引' || t.tag === '故' || t.kind === 'ruin') return { slot: s };
+      if (t.tag === '缘' || t.tag === '引' || t.tag === '故' || t.kind === 'ruin' || t.kind === 'chain') return { slot: s };
     }
     return { slot: Math.min(n, pos + 6) };
   }
@@ -411,6 +436,7 @@ function view(g: Game, dice: number[]): RollView {
     ruyi: L.dice!.ruyi,
     lap: B.lap,
     years: g.step,
+    nudge: L.pet?.kind === 'horse' && L.nudgeLap !== B.lap && dice[0] >= 1 && dice[0] <= 6,
   };
 }
 
@@ -420,6 +446,8 @@ const maxStops = (n: number) => BOARD_STAGES.find((x) => x.size === n)?.maxStops
 export async function boardLap(g: Game) {
   ensureBoard(g);
   newYearBoard(g);
+  await chainLapStart(g);
+  if (g.dead()) return;
   let L = g.L;
   let B = L.board!;
   B.pos = 0;
@@ -455,6 +483,15 @@ export async function boardLap(g: Game) {
             break;
           }
         }
+      }
+      continue;
+    }
+    if (act.action === 'nudge') {
+      // 龙驹：每圈一次，点数 ±1
+      if (L.pet?.kind === 'horse' && L.nudgeLap !== B.lap && dice[0] >= 1 && dice[0] <= 6) {
+        L.nudgeLap = B.lap;
+        dice = [Math.max(1, Math.min(6, dice[0] + act.d))];
+        g.log(`${L.pet.name}换了个步子：${dice[0]} 点。`);
       }
       continue;
     }
@@ -609,6 +646,16 @@ async function land(g: Game, t: Tile): Promise<boolean> {
       await landRuin(g, t, fought);
       t.ttl = 0;
       break;
+    case 'chain': {
+      const ref = t.ref!;
+      t.ttl = 0;
+      const loc = t.loc ?? (L.inDao ? 'cross' : 'neighbor');
+      await chainBeat(g, ref, loc, fought);
+      // 签到碑：记住这一格，下一拍还在这里
+      const st = g.L.chains?.find((c) => c.id === ref);
+      if (st) st.slot = t.slot;
+      break;
+    }
   }
   return fought.v;
 }
@@ -1094,6 +1141,8 @@ function tileFace(g: Game, t: Tile): { name: string; icon: string; hint: string 
       const form = ruinForm(g, lg);
       return { name: ruinName(lg, form), icon: '遗', hint: `前世${HOLDINGS[lg.type].name}·${RUIN_FORM_NAMES[form]}` };
     }
+    case 'chain':
+      return chainTileFace(g, t.ref!, t.loc);
     case 'loc': {
       if (!t.loc) return { name: '荒路', icon: '·', hint: '' };
       const c = cardOf(t);
@@ -1129,7 +1178,7 @@ function tileView(g: Game, t: Tile): TileView {
 export function tileSceneLoc(v: TileView, stage: 'mortal' | 'cult'): string {
   if (v.loc) return v.loc;
   const c = stage === 'cult';
-  return { start: c ? 'cave' : 'home', fate: c ? 'cave' : 'home', market: c ? 'bazaar' : 'market', oracle: c ? 'cross' : 'fair', hold: c ? 'sect' : 'home', conseq: c ? 'cave' : 'home', stray: c ? 'roam' : 'road', dust: c ? 'cross' : 'neighbor', ruin: 'realm', loc: 'home' }[v.kind];
+  return { start: c ? 'cave' : 'home', fate: c ? 'cave' : 'home', market: c ? 'bazaar' : 'market', oracle: c ? 'cross' : 'fair', hold: c ? 'sect' : 'home', conseq: c ? 'cave' : 'home', stray: c ? 'roam' : 'road', dust: c ? 'cross' : 'neighbor', ruin: 'realm', chain: c ? 'karma' : 'neighbor', loc: 'home' }[v.kind];
 }
 
 // ================= 自动驾驶（界面「自动」与模拟脚本共用） =================
@@ -1153,6 +1202,7 @@ export function tileScore(v: RollView, slot: number, tend: Tendency, L: LifeStat
     case 'stray': return -0.5;
     case 'dust': return 1.5;
     case 'ruin': return low ? -1 : tend === 'safe' ? 1.5 : 2.5;
+    case 'chain': return 3.5;
     case 'loc': {
       let s = TAG_SCORE[tend][t.tag ?? '平'] ?? 0;
       if (low && t.tag === '劫') s -= 4;
@@ -1179,4 +1229,15 @@ export function autoAgain(v: RollView, tend: Tendency, L: LifeState): boolean {
   if (v.again <= 0) return false;
   const s = tileScore(v, v.targets[0], tend, L);
   return s < 0 || (v.again >= 3 && s < 0.5);
+}
+// 自动模式要不要让龙驹拨点数：±1 的落点明显更好时拨
+export function autoNudge(v: RollView, tend: Tendency, L: LifeState): 0 | 1 | -1 {
+  if (!v.nudge) return 0;
+  const d = v.dice[0];
+  const at = (x: number) => (x < 1 || x > 6 ? -99 : tileScore(v, Math.min(v.size, v.pos + x), tend, L));
+  const base = tileScore(v, v.targets[0], tend, L);
+  const up = at(d + 1);
+  const down = at(d - 1);
+  if (Math.max(up, down) < base + 1) return 0;
+  return up >= down ? 1 : -1;
 }

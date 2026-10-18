@@ -1,7 +1,8 @@
 import './style.css';
 import './art/art.css';
 import { Game, IO, Prompt, skillName } from './game/engine';
-import { RollAction, RollView, autoAgain, autoDie, faceName, tileSceneLoc } from './game/board';
+import { BEAT_LABELS, CHAIN_BY_ID, activeChains } from './game/chains';
+import { RollAction, RollView, autoAgain, autoDie, autoNudge, faceName, tileSceneLoc } from './game/board';
 import { HOLDINGS } from './data/board';
 import { loadLife, loadMeta, resetAll, saveMeta, lampOf } from './game/meta';
 import { runBattle } from './battle/view';
@@ -240,7 +241,9 @@ async function roll(v: RollView): Promise<RollAction> {
   scene.set({ mode: 'life', danger });
   const key = `${game.L.lifeNo}|${v.lap}|${v.stops}|${v.dice.join(',')}`;
   // 掷过的骰子（窥命之后回来）直接亮出；重掷的、勾了自动摇的，自己滚
-  let rolled = key === shownDice;
+  // 龙驹拨过点数：骰子已经亮着，不再重掷
+  let rolled = key === shownDice || lastRollAct === 'nudge';
+  if (rolled) shownDice = key;
   const autoTumble = !rolled && (lastRollAct === 'reroll' || auto || !!meta.settings.autoRoll);
   return new Promise((resolve) => {
     let peekMode = false;
@@ -315,6 +318,7 @@ async function roll(v: RollView): Promise<RollAction> {
         </div>
         <div class="deal-actions">
           <button class="btn ${peekMode ? 'active' : ''}" data-a="peek" ${v.rerolls <= 0 ? 'disabled' : ''}>改命·窥命（${v.rerolls}）</button>
+          ${rolled && v.nudge ? `<button class="btn" data-a="nudge-" ${v.dice[0] <= 1 ? 'disabled' : ''}>龙驹 −1</button><button class="btn" data-a="nudge+" ${v.dice[0] >= 6 ? 'disabled' : ''}>龙驹 +1</button>` : ''}
           ${v.ruyi > 0 ? `<button class="btn ${ruyiMode ? 'active' : ''}" data-a="ruyi">如意骰（${v.ruyi}）</button>` : ''}
           ${v.canRewind ? '<button class="btn" data-a="rewind">掌天瓶·回溯</button>' : ''}
           <label class="btn chk"><input type="checkbox" data-a="autoroll" ${meta.settings.autoRoll ? 'checked' : ''}>自动摇</label>
@@ -336,6 +340,7 @@ async function roll(v: RollView): Promise<RollAction> {
           sfx.tap();
           if (a === 'roll') void tumble();
           else if (a === 'reroll') finish({ action: 'reroll' });
+          else if (a === 'nudge-' || a === 'nudge+') finish({ action: 'nudge', d: a === 'nudge+' ? 1 : -1 });
           else if (a === 'peek') {
             peekMode = !peekMode;
             ruyiMode = false;
@@ -450,7 +455,7 @@ async function roll(v: RollView): Promise<RollAction> {
       const L = game.L;
       const reach = v.targets.filter((s) => s < n).map((s) => v.tiles[s]);
       const lowHp = L.hp < L.maxHp * 0.3 && reach.some((t) => t.tag === '劫');
-      const story = reach.find((t) => t.tag === '引' || t.tag === '故' || t.kind === 'ruin');
+      const story = reach.find((t) => t.tag === '引' || t.tag === '故' || t.kind === 'ruin' || t.kind === 'chain');
       if ((v.gathered && v.stops === 0) || lowHp || story) {
         auto = false;
         render();
@@ -459,7 +464,9 @@ async function roll(v: RollView): Promise<RollAction> {
       }
       timer = setTimeout(() => {
         if (going) return;
-        if (autoAgain(v, meta.settings.tendency, L)) finish({ action: 'reroll' });
+        const nd = autoNudge(v, meta.settings.tendency, L);
+        if (nd) finish({ action: 'nudge', d: nd });
+        else if (autoAgain(v, meta.settings.tendency, L)) finish({ action: 'reroll' });
         else void go(autoDie(v, meta.settings.tendency, L, Math.random));
       }, 380 / meta.settings.speed);
     }
@@ -663,6 +670,19 @@ function boardBlock(L: LifeState): string {
   return `<h4>命途</h4><div class="chips">${chips.join('')}</div>`;
 }
 
+// 缘与收获：道侣、灵宠、随身前辈这类，和手上没走完的因果链
+function gainBlock(L: LifeState): string {
+  const chips: string[] = [];
+  if (L.partner) chips.push(`<span class="chip">道侣 · ${esc(L.partnerName ?? '道侣')}</span>`);
+  if (L.pet) chips.push(`<span class="chip" title="灵宠 ${L.pet.lv} 级">灵宠 · ${esc(L.pet.name)} ${L.pet.lv} 级</span>`);
+  for (const g of L.gains ?? []) chips.push(`<span class="chip" title="${esc(g.desc ?? '')}">${esc(g.name)}</span>`);
+  for (const c of activeChains(L)) {
+    const d = CHAIN_BY_ID[c.id];
+    if (d) chips.push(`<span class="chip trace" title="${esc(d.gain)}">缘 · ${esc(d.name)}（${BEAT_LABELS[Math.min(3, c.beat)]}）</span>`);
+  }
+  return chips.length ? `<h4>缘与收获</h4><div class="chips">${chips.join('')}</div>` : '';
+}
+
 function refresh() {
   const L = game?.L;
   if (L && replaying) {
@@ -730,6 +750,7 @@ function refresh() {
     <div class="d-only">${faceBlock(L)}</div>
     <h4>天赋</h4><div class="chips">${L.talents.map((t) => `<span class="chip g-${TALENT_BY_ID[t].grade}" title="${TALENT_BY_ID[t].desc}">${TALENT_BY_ID[t].name}</span>`).join('')}</div>
     ${boardBlock(L)}
+    ${gainBlock(L)}
     ${gongBlock(L)}
     ${wish ? `<h4>心愿</h4><div class="wish ${L.wish!.done ? 'done' : ''}">「${wish.name}」${wish.cond}<br>${bar(L.wish!.progress, 1, 'wishbar', L.wish!.done ? '圆满' : Math.round(L.wish!.progress * 100) + '%')}</div>` : ''}
     ${L.traces.length ? `<h4>本世痕迹</h4><div class="chips">${L.traces.map((t) => `<span class="chip trace" title="${MUTATORS.find((m) => m.trace === t.tag)?.name ?? ''}">${MUTATORS.find((m) => m.trace === t.tag)?.name ?? t.tag}</span>`).join('')}</div>` : ''}
