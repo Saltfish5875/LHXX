@@ -78,7 +78,7 @@ export class BattleBackdrop {
     if (this.ready) {
       const scale = Math.max(W / this.ready.naturalWidth, H / this.ready.naturalHeight);
       const iw = this.ready.naturalWidth * scale, ih = this.ready.naturalHeight * scale;
-      // 极宽屏靠上取景保留天宫；竖屏使用专门构图，不拉伸图片。
+      // 极宽屏靠上取景保留远山；竖屏使用专门构图，不拉伸图片。
       g.drawImage(this.ready, (W - iw) / 2, (H - ih) * .22, iw, ih);
     } else {
       this.fallback(g, W, H);
