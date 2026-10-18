@@ -1557,3 +1557,65 @@ h4 .btn.sm {
   color: var(--gold);
   font-weight: 700;
 }
+
+/* 存档 */
+.save-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.save-slot {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.55);
+}
+.save-slot.cur {
+  border-color: var(--teal);
+}
+.save-slot.empty {
+  background: transparent;
+  border-style: dashed;
+}
+.save-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.save-info span {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.save-info small {
+  font-size: 11px;
+  color: var(--ink-2);
+  opacity: 0.8;
+}
+.save-btns {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+@media (max-width: 760px) {
+  .save-slot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .save-btns {
+    justify-content: flex-start;
+  }
+  .save-btns .btn.sm {
+    min-height: 36px;
+    padding: 4px 12px;
+  }
+}
+.saves-root {
+  z-index: 70;
+}

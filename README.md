@@ -11,9 +11,12 @@ npm install
 npm run dev        # 本地开发，浏览器打开终端里提示的地址
 npm run build      # 类型检查 + 打包到 dist/（相对路径，可直接放静态托管，例如 GitHub Pages）
 npm run sim -- 40 all 1   # 无界面批量模拟：[世数] [safe|chance|war|all] [种子]
+npm run make-save -- 20 chance 1   # 用真实引擎跑出一份多世存档，写到 public/saves/twenty-lives.json
 ```
 
-存档放在浏览器 localStorage 里（`lhxx.web.meta.v3` / `lhxx.web.life.v3`），每圈自动存一次，刷新页面后可以继续这一世。重置在「设置」里。
+存档放在浏览器 localStorage 里（`lhxx.web.meta.v3` / `lhxx.web.life.v3`），每年岁末自动存一次，刷新页面后可以继续这一世。重置在「设置」里。
+
+顶栏「存档」（`src/game/saves.ts`）：三个手动档位（`lhxx.web.slot.1..3`，整份拷贝当前进度）、读档前自动备份（`lhxx.web.slot.backup`）、导出 / 导入 `.json` 文件，以及预置的「二十世存档」（`public/saves/twenty-lives.json`，由 `npm run make-save` 生成）。第一次打开带存档系统的版本会问一次要不要载入二十世存档，已有进度会先进自动备份。
 
 ## 操作
 

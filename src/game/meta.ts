@@ -3,8 +3,14 @@ import type { LifeState, MetaState } from './types';
 import type { CompanionId } from '../data/content';
 import { faceKinds } from '../data/faces';
 
-const META_KEY = 'lhxx.web.meta.v3';
-const LIFE_KEY = 'lhxx.web.life.v3';
+export const META_KEY = 'lhxx.web.meta.v3';
+export const LIFE_KEY = 'lhxx.web.life.v3';
+
+// 读档前冻结：页面刷新之前，正在跑的这一世不能再把旧进度写回去
+let frozen = false;
+export function freezeStorage() {
+  frozen = true;
+}
 
 export function newMeta(): MetaState {
   return {
@@ -41,6 +47,7 @@ export function newMeta(): MetaState {
 }
 
 function storage(): Storage | null {
+  if (frozen) return null;
   try {
     return typeof localStorage === 'undefined' ? null : localStorage;
   } catch {
