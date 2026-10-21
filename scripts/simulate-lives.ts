@@ -2,6 +2,7 @@
 // 用法：npm run sim -- [世数=40] [倾向=safe|chance|war|all] [种子=1]
 import { Game, IO, Prompt } from '../src/game/engine';
 import { RollAction, RollView, autoAgain, autoDie, autoNudge } from '../src/game/board';
+import { autoStep } from '../src/game/explore';
 import { newMeta } from '../src/game/meta';
 import { autoBattle } from '../src/battle/sim';
 import { setSeed, rand } from '../src/game/rng';
@@ -141,6 +142,19 @@ async function run(tend: Tendency): Promise<Stats> {
         if (t.kind === 'ruin') st.ruinVisits += 1;
       }
       return { action: 'go', die };
+    },
+    async explore(v) {
+      if (v.stopsLeft === v.maxStops && v.E.day === 0) st.laps += 1;
+      st.rounds += 1;
+      const a = autoStep(v, tend);
+      if (a.kind === 'enter') {
+        st.stops += 1;
+        const p = v.points.find((x) => x.id === a.id)!;
+        const k = p.tileKind === 'loc' ? `loc:${p.tag ?? '平'}` : p.tileKind ?? p.kind;
+        st.kinds[k] = (st.kinds[k] ?? 0) + 1;
+        if (p.tileKind === 'ruin') st.ruinVisits += 1;
+      }
+      return a;
     },
     async battle(spec: BattleSpec) {
       st.battles += 1;

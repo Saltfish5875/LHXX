@@ -1,0 +1,256 @@
+/* 大世界地图：占住主区域，经历卷轴退到一侧（手机上收进「经历」页签） */
+.world {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 260px;
+  overflow: hidden;
+  background: #e1ebe7;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.world-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+}
+.world .btn.sm { min-height: 34px; padding: 4px 12px; background: rgba(250, 251, 246, 0.94); }
+.world .btn.armed { background: #a45248; border-color: #a45248; color: #fafbf6; }
+
+.wm-top {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  pointer-events: none;
+}
+.wm-year, .wm-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(250, 251, 246, 0.92);
+  box-shadow: 0 4px 14px rgba(43, 78, 72, 0.08);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.3;
+}
+.wm-year b { font-family: var(--brush); font-weight: 400; font-size: 19px; letter-spacing: 1px; }
+.wm-year span { color: var(--teal); font-weight: 600; }
+.wm-year small { color: var(--ink-2); font-size: 11px; }
+.wm-bar {
+  position: relative;
+  width: 84px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(56, 110, 104, 0.15);
+  overflow: hidden;
+}
+.wm-bar em { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #6c978b, #386e68); border-radius: 3px; transition: width 0.3s linear; }
+.wm-meta b { font-family: var(--brush); font-weight: 400; font-size: 16px; }
+.wm-meta span { color: var(--ink-2); }
+.wm-meta span + span::before { content: '·'; margin-right: 8px; color: var(--pale); }
+.wm-meta span.off { color: var(--red); }
+
+.wm-sign {
+  position: absolute;
+  top: 54px;
+  left: 8px;
+  max-width: min(70%, 420px);
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: rgba(250, 251, 246, 0.78);
+  color: var(--ink-2);
+  font-size: 12px;
+  pointer-events: none;
+}
+.wm-sign:empty { display: none; }
+
+.wm-note {
+  position: absolute;
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(88%, 460px);
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(250, 251, 246, 0.96);
+  box-shadow: 0 8px 24px rgba(43, 78, 72, 0.14);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.wm-note.show { animation: wmNote 4.2s ease both; }
+.wm-note p { margin: 0 0 4px; font-family: var(--serif); font-size: 14px; color: var(--ink); line-height: 1.5; }
+.wm-note div { display: flex; flex-wrap: wrap; gap: 4px; }
+.wm-note span { font-size: 12px; padding: 1px 7px; border-radius: 999px; background: #e7f1e9; color: var(--teal); }
+.wm-note span.down { background: #f4e3df; color: var(--red); }
+.wm-note span.gold { background: #f3ecdc; color: var(--gold); }
+.wm-note span.neutral { background: #eaeeed; color: var(--ink-2); }
+@keyframes wmNote {
+  0% { opacity: 0; transform: translate(-50%, -6px); }
+  8%, 82% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -4px); }
+}
+
+.wm-bottom {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+.wm-bottom > * { pointer-events: auto; }
+.world.idle .wm-bottom { opacity: 0; pointer-events: none; }
+.world.idle .wm-bottom > * { pointer-events: none; }
+.wm-ctx { display: flex; flex-direction: column; gap: 6px; align-self: center; width: min(100%, 440px); }
+.wm-ctx:empty { display: none; }
+.wm-go {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(250, 251, 246, 0.97);
+  box-shadow: 0 6px 18px rgba(43, 78, 72, 0.12);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  animation: wmIn 0.18s ease-out both;
+}
+.wm-go:hover { border-color: #739d90; }
+.wm-go.off { opacity: 0.55; }
+.wm-go > i {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--c);
+  color: #fafbf6;
+  font-family: var(--brush);
+  font-style: normal;
+  font-size: 17px;
+}
+.wm-go > span { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; }
+.wm-go b { font-size: 15px; }
+.wm-go small { flex-basis: 100%; color: var(--ink-2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wm-tag { font-style: normal; font-size: 11px; padding: 0 6px; border-radius: 999px; color: #fafbf6; background: var(--c); }
+.wm-go > u { flex: none; text-decoration: none; padding: 5px 12px; border-radius: 999px; background: #386e68; color: #fafbf6; font-size: 14px; }
+@keyframes wmIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.wm-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+
+.wm-tip {
+  position: absolute;
+  left: 50%;
+  top: 112px;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(36, 63, 64, 0.72);
+  color: #fafbf6;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: wmTip 7s ease 1s both;
+}
+@keyframes wmTip { 0% { opacity: 0; } 10%, 80% { opacity: 1; } 100% { opacity: 0; } }
+
+/* ---------- 布局：地图占主区域 ---------- */
+.deal:has(.world) {
+  padding: 0;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+@media (min-width: 981px) {
+  .layout:has(.world) { grid-template-columns: minmax(0, 1fr) 270px; }
+  .scroll-wrap:has(.world) {
+    position: relative;
+    display: grid;
+    grid-template-columns: clamp(250px, 28%, 340px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .scroll-wrap:has(.world) > .scene {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 200px;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: -1;
+  }
+  .scroll-wrap:has(.world) > .scroll { grid-area: 1 / 1 / 2 / 2; font-size: 14px; padding: 12px 16px 20px; }
+  .scroll-wrap:has(.world) > .deal { grid-area: 1 / 2 / 2 / 3; max-height: none; border-top: 0; border-left: 1px solid var(--line); }
+}
+@media (min-width: 761px) and (max-width: 980px) {
+  .layout:has(.world) { grid-template-rows: minmax(0, 1fr) auto; }
+  .layout:has(.world) > .panel { max-height: 130px; }
+  .scroll-wrap:has(.world) { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) 24dvh; }
+  .scroll-wrap:has(.world) > .scene { position: absolute; visibility: hidden; pointer-events: none; z-index: -1; width: 100%; height: 200px; }
+  .scroll-wrap:has(.world) > .deal { grid-row: 1; max-height: none; border-top: 0; }
+  .scroll-wrap:has(.world) > .scroll { grid-row: 2; border-top: 1px solid var(--line); }
+}
+@media (max-width: 760px) {
+  .scroll-wrap:has(.world) { position: relative; }
+  .scroll-wrap:has(.world) > .scene {
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 200px;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: -1;
+  }
+  .scroll-wrap:has(.world) > .scroll { display: none; }
+  .scroll-wrap:has(.world) > .deal {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    padding: 0;
+    border-top: 0;
+    box-shadow: none;
+  }
+  .wm-year, .wm-meta { padding: 4px 8px; font-size: 12px; gap: 6px; }
+  .wm-year b { font-size: 17px; }
+  .wm-bar { width: 60px; }
+  .wm-sign { top: 76px; font-size: 11px; }
+  .wm-note { top: 104px; }
+  .wm-tip { top: 132px; }
+  .wm-go { padding: 5px 8px; gap: 8px; }
+  .wm-go > i { width: 28px; height: 28px; font-size: 15px; }
+  .wm-go b { font-size: 14px; }
+  .wm-go small { font-size: 11px; }
+  .wm-go > u { padding: 4px 10px; font-size: 13px; }
+}
+@media (max-height: 500px) and (min-width: 640px) and (pointer: coarse) {
+  .scroll-wrap:has(.world) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 34%); grid-template-rows: auto minmax(0, 1fr); }
+  .scroll-wrap:has(.world) > .mhead { grid-area: 1 / 1 / 2 / -1; }
+  .scroll-wrap:has(.world) > .deal { grid-area: 2 / 1 / 3 / 2; }
+  .scroll-wrap:has(.world) > .scroll { display: block; grid-area: 2 / 2 / 3 / 3; border-left: 1px solid var(--line); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wm-go, .wm-note.show, .wm-tip { animation-duration: 0.01s; }
+}

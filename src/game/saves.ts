@@ -6,8 +6,8 @@ import { REALMS, cnAge } from '../data/core';
 
 export const SAVE_FORMAT = 'lhxx-save';
 export const SLOT_COUNT = 3;
-const SLOT_KEY = (n: number | 'backup') => `lhxx.web.slot.${n}`;
-export const OFFER_KEY = 'lhxx.web.presetOffered';
+const SLOT_KEY = (n: number | 'backup') => `lhxx.explore.slot.${n}`;
+export const OFFER_KEY = 'lhxx.explore.presetOffered';
 
 export interface SaveFile {
   format: typeof SAVE_FORMAT;

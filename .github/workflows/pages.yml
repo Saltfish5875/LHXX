@@ -1,8 +1,12 @@
 name: 部署到 GitHub Pages
 
+# 一个站点放两个版本：
+#   /LHXX/          正式版（main 分支）
+#   /LHXX/explore/  大世界探索版（探索分支）
+# 任一分支推送都会把两个版本一起重新构建，互不覆盖。
 on:
   push:
-    branches: [main]
+    branches: [main, claude/project-thread-28rdj9]
   workflow_dispatch:
 
 permissions:
@@ -14,23 +18,52 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+env:
+  EXPLORE_BRANCH: claude/project-thread-28rdj9
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
-      - run: npm run build
+          cache-dependency-path: main/package-lock.json
+      - name: 构建正式版
+        working-directory: main
+        run: npm ci && npm run build
+      - name: 取探索版分支
+        id: explore
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPLORE_BRANCH }}
+          path: explore
+      - name: 构建探索版
+        if: steps.explore.outcome == 'success'
+        continue-on-error: true
+        working-directory: explore
+        run: npm ci && npm run build
+      - name: 拼成一个站点
+        run: |
+          mkdir -p site
+          cp -r main/dist/. site/
+          if [ -f explore/dist/index.html ]; then
+            mkdir -p site/explore
+            cp -r explore/dist/. site/explore/
+          fi
+          ls site site/explore || true
       - uses: actions/configure-pages@v5
         with:
           enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: site
   deploy:
     needs: build
     runs-on: ubuntu-latest

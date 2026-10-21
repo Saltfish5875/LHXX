@@ -17,7 +17,8 @@ const ALL_NOTHING_MORTAL = [...NOTHING_MORTAL, ...NOTHING_MORTAL_MORE];
 const ALL_NOTHING_CULT = [...NOTHING_CULT, ...NOTHING_CULT_MORE];
 const LOOKUP: LifeEvent[] = [...ALL_CHOICES, ...ALL_FLAVORS, ...ENCOUNTERS, ...FATE_EVENTS, ...TURN_EVENTS];
 import { chance, pick, rand, randInt, weighted } from './rng';
-import { RollAction, RollView, boardLap, recordLegacies } from './board';
+import { RollAction, RollView, recordLegacies } from './board';
+import { ExploreAction, ExploreView, exploreYear } from './explore';
 import { UNLOCKS, WHEEL, hasPage, lampOf, saveLife, saveMeta, wheelPrice } from './meta';
 import { afterBattleCult, applyIdentity, autoEquip, checkAchievements, drawIdentity, ensureCult, giveQi, grantFujue, grantItem, layerCap, layerUp, learnGong, loadoutSpec, metaCult, resolvePending, rotateShop, settleBook, shopItems, startKit, upgradeGrade } from './cult';
 import { estDps } from '../battle/sim';
@@ -46,6 +47,7 @@ export interface Prompt {
 export interface IO {
   choose(p: Prompt): Promise<number>;
   roll(v: RollView): Promise<RollAction>;
+  explore(v: ExploreView): Promise<ExploreAction>; // 大世界：在地图上走动，回报要进哪儿
   battle(spec: BattleSpec): Promise<BattleResult>;
   pickTalents(cands: Talent[], heritage: string | null): Promise<string[]>;
   allocate(points: number, base: Record<AttrKey, number>, origins: string[]): Promise<{ attrs: Record<AttrKey, number>; origin: string | null }>;
@@ -483,7 +485,7 @@ export class Game {
 
     if (L.inDao) await resolvePending(this);
     L.maxStones = Math.max(L.maxStones ?? 0, L.stones);
-    await boardLap(this);
+    await exploreYear(this);
     if (this.dead()) return;
     this.checkPages();
     this.checkWish();

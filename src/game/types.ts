@@ -309,7 +309,9 @@ export interface LifeState {
   turnAt?: number | null; // 转机到来的年龄
   turned?: number; // 本世转机次数
   seen?: Record<string, number>; // 本世见过的流水事件
-  // 命途棋盘
+  // 大世界探索（每世生成的地图、迷雾、行至何处）
+  explore?: ExploreState;
+  // 命途棋盘（探索版里仍是每年事件的来源，只是不再画成棋盘）
   board?: BoardState;
   dice?: DiceState;
   holdings?: Holding[];
@@ -463,4 +465,19 @@ export interface MetaState {
   signin?: number; // 下一世签到碑从几起
   chainsDone?: string[]; // 走到上档过的链
   settings: { tendency: Tendency; speed: number; autoRoll?: boolean };
+}
+
+// ================= 大世界探索 =================
+export interface ExploreState {
+  seed: number; // 本世世界的种子
+  layer: number; // 0 乡里 1 一州
+  px: number;
+  py: number;
+  fog: number[]; // 每格：0 云雾 1 有图未至 2 亲身探明
+  day: number; // 本年已过天数（0～360）
+  found: string[]; // 已登过的望点、已寻到的隐秘之地
+  ratioPaid: number[]; // 已领过的探明度奖励（30/60/90）
+  seclude?: number; // 还要闭关几轮
+  asked?: number; // 本年已打听过消息的年份
+  mapBought?: number; // 本年已买过图的年份
 }

@@ -27,6 +27,8 @@ import { sfx, setSound, soundOn } from './art/sound';
 import { Chip, clearOutcome, playResult, showOutcome, stampCard, stampOption, sweep } from './art/feedback';
 import { boardBackdrop, boardGeometry, tileGraphic, tilePosition } from './art/board';
 import './art/shanshui.css';
+import './explore/explore.css';
+import { WorldMap } from './explore/map-view';
 
 const $ = (id: string) => document.getElementById(id)!;
 const scrollEl = $('scroll');
@@ -52,6 +54,8 @@ panelMask.onclick = () => togglePanel(false);
 
 const meta = loadMeta();
 let auto = false;
+// 大世界地图：整局只有一张画布，换世、换层时重画底图
+const worldMap = new WorldMap({ auto: () => auto, tend: () => meta.settings.tendency, flash: (m) => flash(m) });
 let game: Game;
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -879,11 +883,12 @@ function settle() {
   if (!line && !chips.length && p.label && flyFrom) line = `「${p.label}」，此事就此了了。`;
   const speed = auto ? meta.settings.speed * 1.6 : 1;
   showOutcome(sceneHost, line, chips, speed);
+  if (worldMap.el.isConnected) worldMap.note(line, chips);
   // 手机上结果小签留在「刚才」卡里
   if (line) recent.lead = line;
   recent.chips = chips;
   updateRecentCard();
-  const card = mobileUI.matches ? dealEl.querySelector<HTMLElement>('.mb-card') : null;
+  const card = worldMap.el.isConnected ? worldMap.noteEl() : mobileUI.matches ? dealEl.querySelector<HTMLElement>('.mb-card') : null;
   playResult(chips, flyFrom, card ?? sceneHost, speed);
   flyFrom = null;
   // 棋盘上落子的那一格，冒一个简略结果
@@ -1327,7 +1332,7 @@ async function offerPreset() {
   const p = PRESETS[0];
   const text = hasProgress(cur)
     ? `新加了存档系统（顶栏「存档」）：三个手动档位，能导出导入。\n\n附带一份${p.name}：${p.desc}\n\n要现在载入吗？你现在的进度（${summary(cur)}）会先放进「自动备份」，随时能读回来。`
-    : `新加了存档系统（顶栏「存档」）。\n\n附带一份${p.name}：${p.desc}\n\n要直接从第二十一世玩起吗？`;
+    : `这是大世界探索版：没有棋盘，每一世生成一张新地图，摇杆或方向键自由行走，走动时日子才过。存档和正式版分开。\n\n附带一份${p.name}：${p.desc}\n\n要直接从第二十一世玩起吗？`;
   const i = await choose({ title: '存档', text, options: [{ label: `载入${p.name}` }, { label: hasProgress(cur) ? '不了，接着玩我的' : '不了，从第一世开始' }], style: 'well' });
   if (i !== 0) return;
   try {
@@ -1413,13 +1418,26 @@ mobileUI.addEventListener('change', () => {
 const io: IO = {
   choose,
   roll,
+  explore: async (v) => {
+    settle();
+    await momentsIdle();
+    setMomentSpeed(auto ? meta.settings.speed * 1.6 : 1);
+    scene.set({ mode: 'life', danger: v.points.some((p) => p.tag === '劫' && !p.done) ? 0.4 : 0 });
+    refresh();
+    const a = await worldMap.show(v, dealEl);
+    return a;
+  },
   battle: async (spec) => {
     await momentsIdle();
     const KIND: Record<string, string> = { beast: '妖潮', duel: '斗法', trial: '天劫' };
     moment({ kind: 'battle', big: spec.title, sub: KIND[spec.kind] ?? '劫难', line: spec.mutators.length ? `词条：${spec.mutators.map((m) => m.name).join('、')}` : '墨潮涌来。', seal: '劫' });
     await momentsIdle();
     scene.paused = true;
-    const res = await runBattle(spec, battleEl, game.L.era ?? 'E1');
+    // 在大地图上：就地画圈开打，地图当战场的底
+    const onMap = worldMap.el.isConnected;
+    worldMap.paused = true;
+    const res = await runBattle(spec, battleEl, game.L.era ?? 'E1', onMap ? worldMap.stage() : undefined);
+    worldMap.paused = false;
     scene.paused = false;
     scene.start();
     return res;
@@ -1434,6 +1452,8 @@ const io: IO = {
 
 async function main() {
   game = new Game(meta, io);
+  // 调试：地址带 ?debug 时把游戏挂到 window 上，方便自动化测试
+  if (location.search.includes('debug')) Object.assign(window, { lhxx: { game, worldMap } });
   const nextWish = (meta as typeof meta & { nextWish?: string | null }).nextWish;
   if (nextWish) game.pendingWish = nextWish;
   refresh();

@@ -3,8 +3,8 @@ import type { LifeState, MetaState } from './types';
 import type { CompanionId } from '../data/content';
 import { faceKinds } from '../data/faces';
 
-export const META_KEY = 'lhxx.web.meta.v3';
-export const LIFE_KEY = 'lhxx.web.life.v3';
+export const META_KEY = 'lhxx.explore.meta.v3';
+export const LIFE_KEY = 'lhxx.explore.life.v3';
 
 // 读档前冻结：页面刷新之前，正在跑的这一世不能再把旧进度写回去
 let frozen = false;

@@ -6,6 +6,7 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Game, IO, Prompt } from '../src/game/engine';
 import { RollAction, RollView, autoAgain, autoDie, autoNudge } from '../src/game/board';
+import { autoStep } from '../src/game/explore';
 import { newMeta } from '../src/game/meta';
 import { autoBattle } from '../src/battle/sim';
 import { setSeed, rand } from '../src/game/rng';
@@ -48,6 +49,9 @@ async function main() {
       if (nd) return { action: 'nudge', d: nd };
       if (autoAgain(v, TEND, L)) return { action: 'reroll' };
       return { action: 'go', die: autoDie(v, TEND, L, rand) };
+    },
+    async explore(v) {
+      return autoStep(v, TEND);
     },
     async battle(spec) {
       return autoBattle(spec);

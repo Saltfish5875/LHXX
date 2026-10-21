@@ -184,7 +184,11 @@ function shotStroke(ctx: CanvasRenderingContext2D, x: number, y: number, vx: num
   ctx.stroke();
 }
 
-export function runBattle(spec: BattleSpec, root: HTMLElement, era = 'E1'): Promise<BattleResult> {
+// 大世界里开打：传入地图当底，结界圈一直画着（「就地画圈，打完才出去」）
+export interface BattleStage {
+  draw(ctx: CanvasRenderingContext2D, w: number, h: number, camX: number, camY: number, t: number, zoom: number): void;
+}
+export function runBattle(spec: BattleSpec, root: HTMLElement, era = 'E1', stage?: BattleStage): Promise<BattleResult> {
   const backdrop = new BattleBackdrop(era);
   return new Promise((resolve) => {
     const sim = new BattleSim(spec);
@@ -318,7 +322,7 @@ export function runBattle(spec: BattleSpec, root: HTMLElement, era = 'E1'): Prom
       if (!paused) sim.update(dt, mx, my);
       renderActs();
       fxUpdate(fxState, sim, dt);
-      draw(ctx, sim, root.clientWidth, root.clientHeight, joy, fxState, backdrop);
+      draw(ctx, sim, root.clientWidth, root.clientHeight, joy, fxState, backdrop, stage);
       drawHud(hud, sim, paused);
       if (sim.done) {
         endTimer += dt;
@@ -408,11 +412,19 @@ function fxUpdate(st: FxState, sim: BattleSim, dt: number) {
   st.flash = Math.max(0, st.flash - dt * 2);
 }
 
-function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: number, joy: { ox: number; oy: number; x: number; y: number } | null, fx: FxState, backdrop: BattleBackdrop) {
+function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: number, joy: { ox: number; oy: number; x: number; y: number } | null, fx: FxState, backdrop: BattleBackdrop, stage?: BattleStage) {
   const camX = sim.px + (fx.shake > 0 ? (Math.random() - 0.5) * fx.shake * 28 : 0);
   const camY = sim.py + (fx.shake > 0 ? (Math.random() - 0.5) * fx.shake * 28 : 0);
-  const zoom = Math.min(1, Math.max(0.62, Math.min(w, h) / 760));
-  backdrop.draw(ctx, w, h, camX, camY, sim.t, sim.spec.kind);
+  let zoom = Math.min(1, Math.max(0.62, Math.min(w, h) / 760));
+  // 大地图上开打：先拉远看清整个结界圈，再推近
+  if (stage && sim.t < 2.2) {
+    const fit = (Math.min(w, h) / 2) / (ARENA * 1.12);
+    const k = Math.max(0, (sim.t - 0.7) / 1.5);
+    const e = k * k * (3 - 2 * k);
+    zoom = fit + (zoom - fit) * e;
+  }
+  if (stage) stage.draw(ctx, w, h, camX, camY, sim.t, zoom);
+  else backdrop.draw(ctx, w, h, camX, camY, sim.t, sim.spec.kind);
   ctx.save();
   ctx.translate(w / 2, h / 2);
   ctx.scale(zoom, zoom);
@@ -420,9 +432,30 @@ function draw(ctx: CanvasRenderingContext2D, sim: BattleSim, w: number, h: numbe
   const t = sim.t;
   drawSplats(ctx, fx.splats);
 
-  // 场地结界（靠近才显示）
+  // 场地结界（靠近才显示；大地图上一直画着）
   const dEdge = sim.arena - Math.hypot(sim.px, sim.py);
-  if (dEdge < 320 || sim.phase === 2) {
+  if (stage && sim.phase !== 2) {
+    ctx.fillStyle = 'rgba(36,63,64,0.28)';
+    ctx.beginPath();
+    ctx.arc(0, 0, ARENA * 3, 0, Math.PI * 2);
+    ctx.arc(0, 0, sim.arena, 0, Math.PI * 2, true);
+    ctx.fill();
+    const pulse = 0.55 + Math.sin(sim.t * 3) * 0.15;
+    ctx.strokeStyle = `rgba(164,82,72,${pulse})`;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(0, 0, sim.arena, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,248,232,0.8)';
+    ctx.setLineDash([18, 12]);
+    ctx.lineDashOffset = -sim.t * 30;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, sim.arena - 9, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.lineDashOffset = 0;
+  } else if (dEdge < 320 || sim.phase === 2) {
     ctx.strokeStyle = sim.phase === 2 ? 'rgba(17,24,33,0.7)' : `rgba(58,96,128,${0.6 * (1 - Math.max(0, dEdge) / 320)})`;
     ctx.setLineDash([14, 10]);
     ctx.lineWidth = sim.phase === 2 ? 6 : 3;

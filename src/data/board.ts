@@ -7,9 +7,9 @@ export const SOLAR_TERMS = ['立春', '雨水', '惊蛰', '春分', '清明', '�
 // 棋盘随年龄与境界分四档变大：走得越远，路上的事越多
 export const BOARD_STAGES = [
   { size: 12, name: '乡里', maxStops: 5, text: '' },
-  { size: 16, name: '一州', maxStops: 6, text: '你走出了生你的那片乡里，命途棋盘扩到十六格。' },
-  { size: 20, name: '一域', maxStops: 6, text: '金丹之后，御剑一日千里，命途棋盘扩到二十格。' },
-  { size: 24, name: '天下', maxStops: 7, text: '化神之身，九州不过一步，命途棋盘扩到二十四格。' },
+  { size: 16, name: '一州', maxStops: 6, text: '你走出了生你的那片乡里，眼前是整整一州。' },
+  { size: 20, name: '一域', maxStops: 6, text: '金丹之后，御剑一日千里，一州之地转眼走遍。' },
+  { size: 24, name: '天下', maxStops: 7, text: '化神之身，九州不过一步。' },
 ];
 export const boardStageOf = (L: { inDao: boolean; realm: number; age: number }) => (L.inDao ? (L.realm <= 2 ? 1 : L.realm <= 4 ? 2 : 3) : L.age < 16 ? 0 : 1);
 // 四角：岁首、本命格、市、天机；两处产业格；其余是流年格

@@ -122,7 +122,7 @@ function growBoard(g: Game, n: number) {
 }
 
 // ================= 岁首 =================
-function newYearBoard(g: Game) {
+export function newYearBoard(g: Game) {
   const L = g.L;
   const B = L.board!;
   harvest(g);
@@ -442,7 +442,7 @@ function view(g: Game, dice: number[]): RollView {
   };
 }
 
-const maxStops = (n: number) => BOARD_STAGES.find((x) => x.size === n)?.maxStops ?? 5;
+export const maxStops = (n: number) => BOARD_STAGES.find((x) => x.size === n)?.maxStops ?? 5;
 
 // ================= 一圈 =================
 export async function boardLap(g: Game) {
@@ -570,7 +570,7 @@ function landsOnStart(pos: number, face: number, n: number) {
   return face !== DUN && face !== JIE && pos + face === n;
 }
 
-function endLap(g: Game, fought: boolean) {
+export function endLap(g: Game, fought: boolean) {
   const L = g.L;
   const B = L.board!;
   B.lap += 1;
@@ -594,14 +594,14 @@ function endLap(g: Game, fought: boolean) {
 }
 
 // ================= 落格 =================
-function cardOf(t: Tile): Card {
+export function cardOf(t: Tile): Card {
   return { loc: t.loc ?? 'home', tag: t.tag ?? '平', peeked: t.peeked, acq: t.tag === '故' ? t.ref : undefined };
 }
 function canPeek(g: Game, t: Tile) {
   return t.kind === 'loc' && !!t.loc && !t.peeked && t.tag !== '引' && t.tag !== '故' && !!g.L;
 }
 
-async function land(g: Game, t: Tile): Promise<boolean> {
+export async function land(g: Game, t: Tile): Promise<boolean> {
   const L = g.L;
   const fought = { v: false };
   switch (t.kind) {
@@ -1123,7 +1123,7 @@ export function recordLegacies(g: Game) {
 }
 
 // ================= 格子外观 =================
-function tileFace(g: Game, t: Tile): { name: string; icon: string; hint: string } {
+export function tileFace(g: Game, t: Tile): { name: string; icon: string; hint: string } {
   const L = g.L;
   switch (t.kind) {
     case 'start':
