@@ -4,6 +4,7 @@ name: 部署到 GitHub Pages
 #   /LHXX/          正式版（main 分支）
 #   /LHXX/explore/  大世界探索版（探索分支）
 # 任一分支推送都会把两个版本一起重新构建，互不覆盖。
+# Pages 只允许 main 部署，所以探索分支推送时只是去触发一次 main 上的这个工作流。
 on:
   push:
     branches: [main, claude/project-thread-28rdj9]
@@ -15,14 +16,25 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   EXPLORE_BRANCH: claude/project-thread-28rdj9
 
 jobs:
+  relay:
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: 请 main 重新部署
+        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main
+        env:
+          GH_TOKEN: ${{ github.token }}
   build:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
